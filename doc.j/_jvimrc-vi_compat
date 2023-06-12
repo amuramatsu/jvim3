@@ -1,0 +1,16 @@
+set compatible
+syntax clear
+set laststatus=0
+set history=0
+set nomodeline
+set nobackup
+set noautoindent
+set nosmartindent
+set noruler
+set noshowmatch
+set nowrapscan
+set vb t_vb=
+set backspace=1
+set showmode
+set jcode=T
+set nojkanaconv
