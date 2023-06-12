@@ -1557,8 +1557,12 @@ long		size;
 					else
 					{
 						/* SJIS only */
+#ifdef UCODE
+						sjis += 100;
+#else
 						code = 'S';
 						goto breakBreak;
+#endif
 					}
 				}
 				else if (0x8f == ptr[i])
@@ -1574,18 +1578,26 @@ long		size;
 					else
 					{
 						/* SJIS only */
+#ifdef UCODE
+						sjis += 10;
+#else
 						code = 'S';
 						goto breakBreak;
+#endif
 					}
 				}
 				else if (0x81 <= ptr[i] && ptr[i] <= 0x9f)
 				{
 					/* SJIS only */
+#ifdef UCODE
+					sjis += 1;
+#else
 					code = 'S';
 					if ((size - i >= 1)
 							&& ((0x40 <= ptr[i+1] && ptr[i+1] <= 0x7e)
 								|| (0x80 <= ptr[i+1] && ptr[i+1] <= 0xfc)))
 						goto breakBreak;
+#endif
 				}
 				else if (0xfd <= ptr[i] && ptr[i] <= 0xfe)
 				{
@@ -1606,7 +1618,11 @@ long		size;
 			i++;
 		}
 	}
+#ifdef UCODE
+	if (code == '\0' || (utf8 + sjis + euc) > size)
+#else
 	if (code == '\0')
+#endif
 	{
 		code = *origcode;
 #ifdef UCODE

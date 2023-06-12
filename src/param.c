@@ -418,6 +418,7 @@ set_init()
 		{
 			if ((STRCMP(p, "ja_JP.JIS") == 0)
 					|| (STRCMP(p, "ja_JP.ISO-2022-JP") == 0)
+					|| (STRCMP(p, "ja_JP.ISO-2022-JP-2") == 0)
 					|| (STRCMP(p, "ja_JP.jis7") == 0))
 				STRCPY(p_jp_init, "JJJ");
 			else if ((STRCMP(p, "ja_JP.eucJP") == 0)
@@ -432,7 +433,8 @@ set_init()
 					|| (STRCMP(p, "ja_JP.mscode") == 0))
 				STRCPY(p_jp_init, "SSS");
 #  ifdef UCODE
-			else if (STRCMP(p, "en_US.UTF-8") == 0)
+			else if ((STRCMP(p, "en_US.UTF-8") == 0)
+					|| (STRCMP(p, "ja_JP.UTF-8") == 0))
 				STRCPY(p_jp_init, "TTT");
 #  endif
 		}
