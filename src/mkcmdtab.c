@@ -14,11 +14,7 @@
 
 #include "vim.h"
 
-#if defined(UTS4) || defined(__CYGWIN__)
-    int
-#else
-	void
-#endif
+int
 main(argc, argv)
 	int		argc;
 	char	**argv;
