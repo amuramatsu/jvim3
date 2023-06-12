@@ -14,6 +14,9 @@
 #include "globals.h"
 #include "proto.h"
 #include "param.h"
+#ifdef KANJI
+#include "kanji.h"
+#endif
 
 static void qf_free __ARGS((void));
 static char_u *qf_types __ARGS((int, int));
@@ -74,7 +77,11 @@ qf_init()
 		emsg(e_errorf);
 		return FAIL;
 	}
+#ifdef KANJI
+	if ((fd = fopen(fileconvsto(p_ef), "r")) == NULL)
+#else
 	if ((fd = fopen((char *)p_ef, "r")) == NULL)
+#endif
 	{
 		emsg2(e_openerrf, p_ef);
 		return FAIL;
@@ -163,6 +170,12 @@ qf_init()
 
 	while (fgets((char *)IObuff, CMDBUFFSIZE, fd) != NULL && !got_int)
 	{
+#ifdef KANJI
+		char tmp[CMDBUFFSIZE];
+		i = kanjiconvsfrom(IObuff, STRLEN(IObuff), tmp, CMDBUFFSIZE, NULL, JP_SYS, NULL);
+		tmp[i] = NUL;
+		STRNCPY(IObuff, tmp, CMDBUFFSIZE);
+#endif
 		if ((qfp = (struct qf_line *)alloc((unsigned)sizeof(struct qf_line))) == NULL)
 			goto error2;
 
@@ -178,6 +191,14 @@ qf_init()
 		if (sscanf((char *)IObuff, (char *)fmtstr, adr[0], adr[1], adr[2], adr[3],
 												adr[4], adr[5]) != adr_cnt)
 		{
+#ifdef USE_OPT
+			if (p_opt & OPT_NO_ERR_DISP)
+			{
+				free(qfp);
+				breakcheck();
+				continue;
+			}
+#endif
 			namebuf[0] = NUL;			/* something failed, remove file name */
 			valid = FALSE;
 			STRCPY(errmsg, IObuff);		/* copy whole line to error message */

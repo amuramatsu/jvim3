@@ -190,12 +190,13 @@ EXTERN char_u	*new_last_cmdline INIT(= NULL);	/* new value for last_cmdline */
 EXTERN int		postponed_split INIT(= FALSE);	/* for CTRL-W CTRL-] command */
 EXTERN int		keep_old_search_pattern INIT(= FALSE);	/* for myregcomp() */
 
-#ifdef DEBUG
-EXTERN FILE *debugfp INIT(=NULL);
-#endif
-
 extern char_u *Version;			/* this is in version.c */
 extern char_u *longVersion;		/* this is in version.c */
+
+#ifdef KANJI
+extern char_u *JpVersion;		/* this is in version.c */
+extern char_u *longJpVersion;	/* this is in version.c */
+#endif
 
 /*
  * The error messages that can be shared are included here.
@@ -257,3 +258,29 @@ EXTERN char_u e_umark[]		INIT(="Unknown mark");
 EXTERN char_u e_unknown[]	INIT(="Unknown");
 EXTERN char_u e_write[]		INIT(="Error while writing");
 EXTERN char_u e_zerocount[]	INIT(="Zero count");
+
+#ifdef KANJI
+EXTERN int 		reg_jic		INIT(= 0); 		/* p_jic passed to to regexec() */
+#endif
+#ifdef TRACK
+EXTERN int		Track 		INIT(= FALSE);	/* TRUE when track mode */
+#endif
+#ifdef FEPCTRL
+EXTERN int		FepInit 	INIT(= FALSE);	/* fepctrl initalize flag */
+EXTERN int		FepOn		INIT(= FALSE);	/* fepctrl on key process */
+#endif
+#ifdef NT
+EXTERN int		GuiWin		INIT(= 'w');	/* Windows GUI mode */
+EXTERN int		GuiConfig	INIT(= 0);		/* Windows GUI config No. */
+EXTERN char_u	GuiIni[MAXPATHL]	INIT(= "vim");	/* Windows GUI Init file */
+EXTERN int		SubSysCon	INIT(= TRUE);	/* Console Sub System */
+EXTERN char_u **WinScreen	INIT(= NULL);	/* Windows Screen Buffer Copy */
+EXTERN int		DoMake		INIT(= FALSE);	/* domake() call */
+EXTERN int		NoResize	INIT(= FALSE);	/* fexrc is doset() call */
+EXTERN long_u	BenchTime	INIT(= 0);		/* bench mark time */
+EXTERN int		NoMap		INIT(= FALSE);	/* no mapping input mode */
+# if defined(USE_EXFILE) && defined(USE_MATOME)
+EXTERN int		NoEFS		INIT(= FALSE);	/* no Extend File System */
+EXTERN int		DoMatome	INIT(= FALSE);	/* mime trans */
+# endif
+#endif

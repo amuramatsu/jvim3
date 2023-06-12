@@ -14,6 +14,9 @@
 #include "globals.h"
 #include "proto.h"
 #include "param.h"
+#ifdef KANJI
+#include "kanji.h"
+#endif
 
 char *tgoto __PARMS((char *cm, int col, int line));
 
@@ -38,6 +41,16 @@ static int		canopt;					/* TRUE when cursor goto can be optimized */
 static int		invert = 0;				/* set to INVERTCODE when inverting */
 
 #define INVERTCODE		0x80
+
+#ifdef KANJI
+# define SCREEN(scr)	  ((scr)[Columns])
+# define SCRTST(scr)	  (((scr)[Columns]) != 0)
+# define SCRCMP(scr, inv) (inv == 0 ? (((scr)[Columns]) == 0) : (((scr)[Columns]) != 0))
+# define SCRINV(scr, inv) (inv == 0 ? (((scr)[Columns]) != 0) : (((scr)[Columns]) != inv))
+#endif
+#if defined(KANJI) && defined(NT)
+static int		color = 0;
+#endif
 
 static int win_line __ARGS((WIN *, linenr_t, int, int));
 static void screen_char __ARGS((char_u *, int, int));
@@ -331,7 +344,11 @@ win_update(wp)
 			to = wp->w_cursor.lnum;
 		}
 	/* if in block mode and changed column or wp->w_curswant: update all lines */
+#ifdef KANJI
+		if (Visual_block)
+#else
 		if (Visual_block && (wp->w_cursor.col != old_cursor.col || wp->w_curswant != oldCurswant))
+#endif
 		{
 			if (from > VIsual.lnum)
 				from = VIsual.lnum;
@@ -570,6 +587,9 @@ win_line(wp, lnum, startrow, endrow)
 	int				row;				/* row in the window, excluding w_winpos */
 	int				screen_row;			/* row on the screen, including w_winpos */
 	char_u			*ptr;
+#ifdef KANJI
+	char_u			*ltop;
+#endif
 	char_u			extra[16];			/* "%ld" must fit in here */
 	char_u			*p_extra;
 	int 			n_extra;
@@ -607,6 +627,16 @@ win_line(wp, lnum, startrow, endrow)
 				temp = getvcol(wp, bot, 2);
 				if (temp < fromcol)
 					fromcol = temp;
+#ifdef KANJI
+				/* adjust for multibyte char. */
+				{
+					FPOS	w;
+					w.lnum = lnum;
+					w.col = vcol2col(curwin, lnum, fromcol, NULL, 0, 0);
+					if (*ml_get_pos(&w) != '\t')
+						fromcol = getvcol(wp, &w, 2);
+				}
+#endif
 
 				if (wp->w_curswant != MAXCOL)
 				{
@@ -614,6 +644,16 @@ win_line(wp, lnum, startrow, endrow)
 					temp = getvcol(wp, bot, 3);
 					if (temp > tocol)
 						tocol = temp;
+#ifdef KANJI
+					/* adjust for multibyte char. */
+					{
+						FPOS	w;
+						w.lnum = lnum;
+						w.col = vcol2col(curwin, lnum, tocol, NULL, 0, 0);
+						if (*ml_get_pos(&w) != '\t')
+							tocol = getvcol(wp, &w, 3);
+					}
+#endif
 					++tocol;
 				}
 			}
@@ -649,11 +689,28 @@ win_line(wp, lnum, startrow, endrow)
 			canopt = FALSE;
 	}
 
+#ifdef KANJI
+	ltop =
+#endif
 	ptr = ml_get_buf(wp->w_buffer, lnum, FALSE);
 	if (!wp->w_p_wrap)		/* advance to first character to be displayed */
 	{
 		while (vcol < wp->w_leftcol && *ptr)
+		{
+#ifdef KANJI
+# if defined(NT) && defined(SYNTAX)
+			if (wp->w_p_syt && GuiWin)
+				is_syntax(wp, lnum, &ltop, &ptr);
+# endif
+			if (ISkanji(*ptr))
+			{
+				vcol += 2;
+				ptr  += 2;
+			}
+			else
+#endif
 			vcol += chartabsize(*ptr++, vcol);
+		}
 		if (vcol > wp->w_leftcol)
 		{
 			n_spaces = vcol - wp->w_leftcol;	/* begin with some spaces */
@@ -678,9 +735,18 @@ win_line(wp, lnum, startrow, endrow)
 		if (!canopt)	/* Visual in this line */
 		{
 			if (((vcol == fromcol && !(noinvcur && vcol == wp->w_virtcol)) ||
+#ifdef KANJI
+					(noinvcur
+						&& (ptr > ltop)
+						&& ISkanjiPointer(ml_get_buf(wp->w_buffer, lnum, FALSE), ptr - 1) == 2
+						&& vcol == wp->w_virtcol + 2 && vcol >= fromcol) ||
+#endif
 					(noinvcur && vcol == wp->w_virtcol + 1 && vcol >= fromcol)) &&
 					vcol < tocol)
+			{
+				(void)set_highlight('v');
 				start_highlight();		/* start highlighting */
+			}
 			else if (invert && (vcol == tocol || (noinvcur && vcol == wp->w_virtcol)))
 				stop_highlight();		/* stop highlighting */
 		}
@@ -703,7 +769,30 @@ win_line(wp, lnum, startrow, endrow)
 		}
 		else
 		{
+#if defined(KANJI) && defined(NT) && defined(SYNTAX)
+			if (wp->w_p_syt && GuiWin)
+			{
+				if (!canopt && (fromcol <= vcol) && (vcol <= tocol))
+					;
+				else
+				{
+					int		clr = is_syntax(wp, lnum, &ltop, &ptr);
+
+					if (clr)
+					{
+						color = clr;
+						start_highlight();		/* start highlighting */
+					}
+					else if (!('a' <= color && color <= 'z'))
+						stop_highlight();		/* stop highlighting */
+				}
+			}
+#endif
+#ifdef KANJI
+			if ((c = *ptr++) < ' ' || c == DEL || (c >=0x80 && !ISdisp(c)))
+#else
 			if ((c = *ptr++) < ' ' || (c > '~' && c <= 0xa0))
+#endif
 			{
 				/*
 				 * when getting a character from the file, we may have to turn it
@@ -720,7 +809,45 @@ win_line(wp, lnum, startrow, endrow)
 					p_extra = (char_u *)"";
 					n_extra = 1;
 					c = '$';
+#if defined(KANJI) && defined(NT) && defined(SYNTAX)
+					if (wp->w_p_syt && GuiWin)
+					{
+						int		clr = is_crsyntax(wp);
+
+						if (clr)
+						{
+							color = clr;
+							start_highlight();		/* start highlighting */
+						}
+						else if (!('a' <= color && color <= 'z'))
+							stop_highlight();		/* stop highlighting */
+					}
+#endif
 				}
+#ifdef CRMARK
+				else if (c == NUL && wp->w_p_cr)
+				{
+					p_extra = (char_u *)"";
+					n_extra = 1;
+					c = *p_cc;
+					if (c == NUL || ISkanji(c) || c <= ' ')
+						c = '$';
+# if defined(KANJI) && defined(NT) && defined(SYNTAX)
+					if (wp->w_p_syt && GuiWin)
+					{
+						int		clr = is_crsyntax(wp);
+
+						if (clr)
+						{
+							color = clr;
+							start_highlight();		/* start highlighting */
+						}
+						else if (!('a' <= color && color <= 'z'))
+							stop_highlight();		/* stop highlighting */
+					}
+# endif
+				}
+#endif
 				else if (c != NUL)
 				{
 					p_extra = transchar(c);
@@ -736,20 +863,33 @@ win_line(wp, lnum, startrow, endrow)
 			{
 				if (vcol == 0)	/* invert first char of empty line */
 				{
+#ifdef KANJI
+					if (*screenp != ' ' || SCRINV(screenp, invert))
+					{
+							*screenp = ' ';
+							SCREEN(screenp) = invert;
+							screen_char(screenp, screen_row, col);
+					}
+#else
 					if (*screenp != (' ' ^ INVERTCODE))
 					{
 							*screenp = (' ' ^ INVERTCODE);
 							screen_char(screenp, screen_row, col);
 					}
+#endif
 					++screenp;
 					++col;
 				}
 				stop_highlight();
 			}
-			/* 
+			/*
 			 * blank out the rest of this row, if necessary
 			 */
+#ifdef KANJI
+			while (col < Columns && *screenp == ' ' && !SCRTST(screenp))
+#else
 			while (col < Columns && *screenp == ' ')
+#endif
 			{
 				++screenp;
 				++col;
@@ -763,6 +903,28 @@ win_line(wp, lnum, startrow, endrow)
 			screen_row++;
 			break;
 		}
+#ifdef KANJI
+		if (col >= (ISkanji(c) ? Columns - 1 : Columns)) /* continuous line */
+		{
+			if (col == Columns - 1 && (*screenp != BRCHAR || !SCRCMP(screenp, invert)))
+			{
+				*screenp = BRCHAR;
+				SCREEN(screenp) = invert;
+				screen_char(screenp, screen_row, col);
+			}
+			col = 0;
+			++row;
+			++screen_row;
+			if (!wp->w_p_wrap)
+				break;
+			if (row == endrow)		/* line got too long for screen */
+			{
+				++row;
+				break;
+			}
+			screenp = LinePointers[screen_row];
+		}
+#else	/* KANJI */
 		if (col >= Columns)
 		{
 			col = 0;
@@ -777,12 +939,58 @@ win_line(wp, lnum, startrow, endrow)
 			}
 			screenp = LinePointers[screen_row];
 		}
+#endif	/* KANJI */
 
 		/*
 		 * Store the character in Nextscreen.
 		 * Be careful with characters where (c ^ INVERTCODE == ' '), they may be
 		 * confused with spaces inserted by scrolling.
 		 */
+#ifdef KANJI
+		if (ISkanji(c))
+		{
+			char_u	c1, c2;
+
+			c1 = c;
+			c2 = *ptr++;
+			if (*screenp != c1 || *(screenp + 1) != c2 || SCRINV(screenp, invert))
+			{
+				if (invert)
+				{
+					SCREEN(screenp)	  = invert;
+					SCREEN(screenp+1) = invert;
+				}
+				else
+				{
+					SCREEN(screenp)	  = 0;
+					SCREEN(screenp+1) = 0;
+				}
+				*screenp++ = c1;
+				*screenp++ = c2;
+				screen_char(screenp - 2, screen_row, col);
+				col  += 2;
+				vcol += 2;
+			}
+			else
+			{
+				screenp += 2;
+				vcol    += 2;
+				col     += 2;
+			}
+		}
+		else
+		{
+			if (SCRINV(screenp, invert) || *screenp != c)
+			{
+				*screenp = c;
+				SCREEN(screenp) = invert;
+				screen_char(screenp, screen_row, col);
+			}
+			++screenp;
+			col++;
+			vcol++;
+		}
+#else	/* KANJI */
 		if (*screenp != (c ^ invert) || c == (' ' ^ INVERTCODE))
 		{
 			*screenp = (c ^ invert);
@@ -791,6 +999,7 @@ win_line(wp, lnum, startrow, endrow)
 		++screenp;
 		col++;
 		vcol++;
+#endif	/* KANJI */
 	}
 
 	if (invert)
@@ -814,7 +1023,7 @@ screen_outchar(c, row, col)
 	buf[1] = NUL;
 	screen_msg(buf, row, col);
 }
-	
+
 /*
  * put string '*msg' on the screen at position 'row' and 'col'
  * update NextScreen
@@ -833,11 +1042,40 @@ screen_msg(msg, row, col)
 	screenp = LinePointers[row] + col;
 	while (*msg && col < Columns)
 	{
+#ifdef KANJI
+		if ((*screenp != *msg) || (ISkanji(*msg) && screenp[1] != msg[1])
+				|| !SCRCMP(screenp, invert) || (*msg == ' ' && SCRTST(screenp)))
+		{
+			if (ISkanji(*msg))
+			{
+				*screenp = msg[0];
+				SCREEN(screenp) = invert;
+				screenp++;
+				*screenp = msg[1];
+				SCREEN(screenp) = invert;
+				screenp++;
+				screen_char(screenp - 2, row, col);
+				col += 2;
+				msg	+=2;
+				continue;
+			}
+			*screenp = *msg;
+			SCREEN(screenp) = invert;
+			screen_char(screenp, row, col);
+		}
+		if (ISkanji(*msg))
+		{
+			++screenp;
+			++col;
+			++msg;
+		}
+#else
 		if (*screenp != (*msg ^ invert) || *msg == (' ' ^ INVERTCODE))
 		{
 			*screenp = (*msg ^ invert);
 			screen_char(screenp, row, col);
 		}
+#endif
 		++screenp;
 		++col;
 		++msg;
@@ -890,6 +1128,11 @@ set_highlight(context)
 		case 'n':	highlight = NULL;		/* no highlighting */
 					unhighlight = NULL;
 					break;
+#if defined(FEPCTRL) && !defined(MSDOS)
+		case 'u':	highlight = T_US;		/* underline */
+					unhighlight = T_UE;
+					break;
+#endif
 		default:	highlight = T_TI;		/* invert/reverse */
 					unhighlight = T_TP;
 					break;
@@ -900,6 +1143,9 @@ set_highlight(context)
 		highlight = NULL;
 		return FAIL;
 	}
+#if defined(KANJI) && defined(NT)
+	color = mode & 0xff;
+#endif
 	return OK;
 }
 
@@ -909,7 +1155,11 @@ start_highlight()
 	if (highlight != NULL)
 	{
 		outstr(highlight);
+#if defined(KANJI) && defined(NT)
+		invert = color;
+#else
 		invert = INVERTCODE;
+#endif
 	}
 }
 
@@ -932,7 +1182,9 @@ screen_char(p, row, col)
 		int 	row;
 		int 	col;
 {
+#ifndef KANJI
 	int			c;
+#endif
 	int			noinvcurs;
 
 	/*
@@ -963,22 +1215,37 @@ screen_char(p, row, col)
 			i = col - oldcol;
 			if (i <= 4 + noinvcurs && canopt)
 			{
+#ifdef KANJI
+				char_u		*ptr;
+				ptr = p - i;
+				while (ptr < p)
+				{
+					if (ISkanji(*ptr))
+					{
+						outchar2(*ptr, *(ptr + 1));
+						ptr += 2;
+					}
+					else
+						outchar(*ptr++);
+				}
+#else	/* KANJI */
 				while (i)
 				{
 					c = *(p - i--);
 					outchar(c ^ invert);
 				}
+#endif	/* KANJI */
 			}
 			else
 			{
 				if (noinvcurs)
 					stop_highlight();
-			
+
 				if (T_CRI && *T_CRI)	/* use tgoto interface! jw */
 					OUTSTR(tgoto((char *)T_CRI, 0, i));
 				else
 					windgoto(row, col);
-			
+
 				if (noinvcurs)
 					start_highlight();
 			}
@@ -999,12 +1266,23 @@ screen_char(p, row, col)
 	 */
 	if (p_wi)
 	{
-		if (invert)                                      
-			outstr(highlight);                            
-		else                                             
+		if (invert)
+			outstr(highlight);
+		else
 			outstr(unhighlight);
 	}
+#ifdef KANJI
+	if (ISkanji(*p))
+	{
+		outchar2(*p, *(p + 1));
+		p++;
+		oldcol++;
+	}
+	else
+		outchar(*p);
+#else
 	outchar(*p ^ invert);
+#endif
 	oldcol++;
 }
 
@@ -1027,12 +1305,18 @@ screen_fill(start_row, end_row, start_col, end_col, c1, c2)
 	if (start_row >= end_row || start_col >= end_col)	/* nothing to do */
 		return;
 
+#ifndef KANJI
 	c1 ^= invert;
 	c2 ^= invert;
+#endif
 	for (row = start_row; row < end_row; ++row)
 	{
 			/* try to use delete-line termcap code */
+#ifdef KANJI
+		if (c2 == ' ' && !invert && end_col == Columns && T_EL != NULL && *T_EL != NUL)
+#else
 		if (c2 == ' ' && end_col == Columns && T_EL != NULL && *T_EL != NUL)
+#endif
 		{
 			/*
 			 * check if we really need to clear something
@@ -1044,7 +1328,11 @@ screen_fill(start_row, end_row, start_col, end_col, c1, c2)
 				++col;
 				++screenp;
 			}
+#ifdef KANJI
+			while (col < end_col && *screenp == ' ' && !SCRTST(screenp))
+#else
 			while (col < end_col && *screenp == ' ')	/* skip blanks */
+#endif
 			{
 				++col;
 				++screenp;
@@ -1062,10 +1350,20 @@ screen_fill(start_row, end_row, start_col, end_col, c1, c2)
 		c = c1;
 		for (col = start_col; col < end_col; ++col)
 		{
+#ifdef KANJI
+			if (*screenp != c || !SCRCMP(screenp, invert))
+#else
 			if (*screenp != c)
+#endif
 			{
+#ifdef KANJI
+				*screenp = c;
+				SCREEN(screenp) = invert;
+				if (!did_delete || c != ' ' || invert)
+#else
 				*screenp = c;
 				if (!did_delete || c != ' ')
+#endif
 					screen_char(screenp, row, col);
 			}
 			++screenp;
@@ -1074,7 +1372,11 @@ screen_fill(start_row, end_row, start_col, end_col, c1, c2)
 		if (row == Rows - 1)
 		{
 			redraw_cmdline = TRUE;
+#ifdef KANJI
+			if (c1 == ' ' && c2 == ' ' && !invert)
+#else
 			if (c1 == ' ' && c2 == ' ')
+#endif
 				clear_cmdline = FALSE;
 		}
 	}
@@ -1139,7 +1441,14 @@ screenalloc(clear)
 	for (wp = firstwin; wp; wp = wp->w_next)
 		win_free_lsize(wp);
 
+#ifdef KANJI
+	Nextscreen = (char_u *)malloc((size_t) (Rows * Columns * 2));
+#else
 	Nextscreen = (char_u *)malloc((size_t) (Rows * Columns));
+#endif
+#ifdef NT
+	WinScreen =
+#endif
 	LinePointers = (char_u **)malloc(sizeof(char_u *) * Rows);
 	for (wp = firstwin; wp; wp = wp->w_next)
 	{
@@ -1158,8 +1467,24 @@ screenalloc(clear)
 	}
 	else
 	{
+#ifdef KANJI
+		for (i = 0; i < Rows; ++i)
+			LinePointers[i] = Nextscreen + i * Columns * 2;
+#else
 		for (i = 0; i < Rows; ++i)
 			LinePointers[i] = Nextscreen + i * Columns;
+#endif
+#ifdef NT
+# ifdef KANJI
+		for (i = 0; i < Rows; i++)
+		{
+			memset(&Nextscreen[i * Columns * 2], ' ', Columns);
+			memset(&Nextscreen[i * Columns * 2 + Columns], 0, Columns);
+		}
+# else
+		memset((char *)Nextscreen, ' ', (size_t)(Rows * Columns));
+# endif
+#endif
 	}
 
 	if (clear)
@@ -1182,7 +1507,18 @@ screenclear2()
 	outstr(T_ED);				/* clear the display */
 
 								/* blank out Nextscreen */
+#ifdef KANJI
+	{
+		int			i;
+		for (i = 0; i < Rows; i++)
+		{
+			memset(&Nextscreen[i * Columns * 2], ' ', Columns);
+			memset(&Nextscreen[i * Columns * 2 + Columns], 0, Columns);
+		}
+	}
+#else
 	memset((char *)Nextscreen, ' ', (size_t)(Rows * Columns));
+#endif
 
 	win_rest_invalid(firstwin);
 	clear_cmdline = FALSE;
@@ -1359,11 +1695,62 @@ curs_columns(scroll)
 
 	curwin->w_row = Cline_row;
 	if (curwin->w_p_wrap)			/* long line wrapping, adjust curwin->w_row */
+#ifdef KANJI
+	{
+		char_u	*	p = ml_get_buf(curbuf, curwin->w_cursor.lnum, FALSE);
+		colnr_t		col  = curwin->w_p_nu ? 8 : 0;
+
+		if (curwin->w_col >= Columns)
+		{
+			while (*p)
+			{
+				if (ISkanji(*p))
+				{
+					p += 2;
+					if (col == (Columns - 1))
+					{
+						col = 2;
+						curwin->w_row++;
+						curwin->w_col -= (Columns - 1);
+						if (curwin->w_col < Columns)
+							break;
+					}
+					else
+						col += 2;
+				}
+				else
+				{
+					col += chartabsize(*p, col);
+					p++;
+				}
+				if (col >= Columns)
+				{
+					col -= Columns;
+					curwin->w_row++;
+					curwin->w_col -= Columns;
+					if (curwin->w_col < Columns)
+						break;
+				}
+			}
+		}
+		if (curwin->w_col == (Columns - 1) && ISkanjiCur() == 1)
+		{
+			curwin->w_col = 0;
+			curwin->w_row++;
+		}
+		else if (curwin->w_col >= Columns)
+		{
+			curwin->w_col -= Columns;
+			curwin->w_row++;
+		}
+	}
+#else
 		while (curwin->w_col >= Columns)
 		{
 			curwin->w_col -= Columns;
 			curwin->w_row++;
 		}
+#endif
 	else if (scroll)	/* no line wrapping, compute curwin->w_leftcol if scrolling is on */
 						/* if scrolling is off, curwin->w_leftcol is assumed to be 0 */
 	{
@@ -1422,23 +1809,54 @@ getvcol(wp, pos, type)
 	int				c;
 
 	vcol = 0;
+#ifdef KANJI
+	if (type == 99)
+		vcol = (curwin->w_p_nu ? 8 : 0);
+#endif
 	ptr = ml_get_buf(wp->w_buffer, pos->lnum, FALSE);
 	for (col = pos->col; col >= 0; --col)
 	{
 		c = *ptr++;
+#ifdef KANJI
+		if (ISkanji(c))
+			ptr++;
+		else
+#endif
 		if (c == NUL)		/* make sure we don't go past the end of the line */
 			break;
 
 		/* A tab gets expanded, depending on the current column */
+#ifdef KANJI
+		if (ISkanji(c))
+		{
+			if (type == 99 && (vcol % Columns) == (Columns - 1))
+				vcol++;
+			incr = 2;
+		}
+		else
+#endif
 		incr = chartabsize(c, (long)vcol);
 
+#ifdef KANJI
+		if (type == 99 && *ptr == NUL && c < ' ' && c != TAB
+										&& (vcol % Columns) == (Columns - 1))
+			incr = 1;
+#endif
 		if (col == 0)		/* character at pos.col */
 		{
+#ifdef KANJI
+			if (type == 3 || ((type == 1 || type == 99) && c == TAB && State == NORMAL && !wp->w_p_list))
+#else
 			if (type == 3 || (type == 1 && c == TAB && State == NORMAL && !wp->w_p_list))
+#endif
 				--incr;
 			else
 				break;
 		}
+#ifdef KANJI
+		if (ISkanji(c))
+			col--;
+#endif
 		vcol += incr;
 	}
 	return vcol;
@@ -1518,7 +1936,7 @@ win_ins_lines(wp, row, nlines, invalid, mayclear)
 
 	if (RedrawingDisabled || nlines <= 0 || wp->w_height < 5)
 		return FAIL;
-	
+
 	if (nlines > wp->w_height - row)
 		nlines = wp->w_height - row;
 
@@ -1614,7 +2032,7 @@ win_del_lines(wp, row, nlines, invalid, mayclear)
 
 	if (RedrawingDisabled || nlines <= 0)
 		return FAIL;
-	
+
 	if (nlines > wp->w_height - row)
 		nlines = wp->w_height - row;
 
@@ -1731,11 +2149,11 @@ screen_ins_lines(off, row, nlines, end)
 						(T_IL == NULL || *T_IL == NUL) &&
 						(T_SR == NULL || *T_SR == NUL || row != 0)))
 		return FAIL;
-	
+
 	/*
 	 * It "looks" better if we do all the inserts at once
 	 */
-    if (T_CIL && *T_CIL) 
+    if (T_CIL && *T_CIL)
     {
         windgoto(cursor_row, 0);
 		if (nlines == 1 && T_IL && *T_IL)
@@ -1745,7 +2163,7 @@ screen_ins_lines(off, row, nlines, end)
     }
     else
     {
-        for (i = 0; i < nlines; i++) 
+        for (i = 0; i < nlines; i++)
         {
             if (i == 0 || cursor_row != 0)
 				windgoto(cursor_row, 0);
@@ -1769,6 +2187,9 @@ screen_ins_lines(off, row, nlines, end)
 				LinePointers[j + nlines] = LinePointers[j];
 		LinePointers[j + nlines] = temp;
 		memset((char *)temp, ' ', (size_t)Columns);
+#ifdef KANJI
+		memset((char *)&temp[Columns], 0, (size_t)Columns);
+#endif
 	}
 	return OK;
 }
@@ -1815,25 +2236,25 @@ screen_del_lines(off, row, nlines, end)
 		return FAIL;
 
 	/* delete the lines */
-	if (T_CDL && *T_CDL) 
+	if (T_CDL && *T_CDL)
 	{
 		windgoto(cursor_row, 0);
 		if (nlines == 1 && T_DL && *T_DL)
 			outstr(T_DL);
 		else
 			OUTSTR(tgoto((char *)T_CDL, 0, nlines));
-	} 
+	}
 	else
 	{
 		if (row == 0)
 		{
 			windgoto(cursor_end - 1, 0);
-			for (i = 0; i < nlines; i++) 
+			for (i = 0; i < nlines; i++)
 				outchar('\n');
 		}
 		else
 		{
-			for (i = 0; i < nlines; i++) 
+			for (i = 0; i < nlines; i++)
 			{
 				windgoto(cursor_row, 0);
 				outstr(T_DL);           /* delete a line */
@@ -1855,6 +2276,9 @@ screen_del_lines(off, row, nlines, end)
 			LinePointers[j - nlines] = LinePointers[j];
 		LinePointers[j - nlines] = temp;
 		memset((char *)temp, ' ', (size_t)Columns);
+#ifdef KANJI
+		memset((char *)&temp[Columns], 0, (size_t)Columns);
+#endif
 	}
 	return OK;
 }

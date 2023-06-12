@@ -15,6 +15,9 @@
 #include "globals.h"
 #include "proto.h"
 #include "param.h"
+#ifdef KANJI
+#include "kanji.h"
+#endif
 
 #undef EXTERN
 #undef INIT
@@ -39,7 +42,11 @@ static linenr_t	opnum = 0;
 static linenr_t	Prenum; 		/* The (optional) number before a command. */
 int				redo_Visual_busy = FALSE;	/* TRUE when redo-ing a visual */
 
+#ifdef KANJI
+static void		prep_redo __ARGS((long, int, int, int, int));
+#else
 static void		prep_redo __ARGS((long, int, int, int));
+#endif
 static int		checkclearop __ARGS((void));
 static int		checkclearopq __ARGS((void));
 static void		clearopbeep __ARGS((void));
@@ -82,6 +89,9 @@ normal()
 	int 			type = 0;				/* type of operation */
 	int 			dir = FORWARD;			/* search direction */
 	int				nchar = NUL;
+#ifdef KANJI
+	int				kchar = NUL;
+#endif
 	int				finish_op;
 	linenr_t		Prenum1;
 	char_u			searchbuff[CMDBUFFSIZE];/* buffer for search string */
@@ -102,6 +112,10 @@ normal()
 	static colnr_t	redo_Visual_col;		/* number of columns or end column */
 	static long		redo_Visual_Prenum;		/* Prenum for operator */
 
+#ifdef TRACK
+	if (Track)
+		showtrack();
+#endif
 	Prenum = 0;
 	/*
 	 * If there is an operator pending, then the command we take this time
@@ -170,17 +184,77 @@ getcount:
 	 * get an additional character if we need one
 	 * for CTRL-W we already got it when looking for a count
 	 */
+#ifdef FEPCTRL
+	if (c >= 0x100 || ctrl_w)
+		;	/* this key is special key. nothing to do. strchr is ascii only. */
+	else if (strchr(p_fo, c))
+	{
+		FepOn = TRUE;
+# if defined(CANNA) || defined(ONEW)
+		if (c != ':' && c != '?' && c != '/')
+			fep_visualmode(TRUE);
+# endif
+		if (curbuf->b_p_fc && curbuf->fepmode && !fep_get_mode())
+			fep_force_on();
+		switch (*curbuf->b_p_ji) {
+		case 'j':
+			if (!p_ja)
+				break;
+			/* no break */
+		case 'J':
+			if (!fep_get_mode())
+				fep_force_on();
+			break;
+		case 'a':
+			if (!p_ja)
+				break;
+			/* no break */
+		case 'A':
+			if (fep_get_mode())
+				fep_force_off();
+			break;
+		default:
+			break;
+		}
+	}
+#endif
 	if (ctrl_w)
 	{
 		nchar = c;
 		c = Ctrl('W');
 		premsg(c, nchar);
 	}
+#ifdef KANJI
+	else if (c >= 0x100)
+		;	/* this key is special key. nothing to do. strchr is ascii only. */
+#endif
 	else if (strchr("@zZtTfF[]mg'`\"", c) || (c == 'q' && !Recording && !Exec_reg) ||
 										(c == 'r' && !VIsual.lnum))
 	{
+#ifdef KANJI
+		State = NOMAPPING;
+#  ifdef FEPCTRL
+retry_input:
+#  endif
+		nchar = vgetc();		/* no macro mapping for this char */
+#  ifdef FEPCTRL
+		if (((0 <= nchar && nchar <= 0x20 && nchar != ESC) || nchar == K_ZERO)
+				&& curbuf->b_p_fc
+				&& (p_fk != NULL && STRRCHR(p_fk, nchar == K_ZERO ? '@' : nchar + '@') != NULL))
+		{
+			if (fep_get_mode())
+				fep_force_off();
+			else
+				fep_force_on();
+			goto retry_input;
+		}
+#  endif
+		if (ISkanji(nchar))
+			kchar = vgetc();
+#else	/* KANJI */
 		State = NOMAPPING;
 		nchar = vgetc();		/* no macro mapping for this char */
+#endif	/* KANJI */
 		premsg(c, nchar);
 	}
 	if (p_sc)
@@ -400,6 +474,9 @@ getcount:
 
 	  case Ctrl('L'):
 		CHECKCLEAROP;
+#ifdef NT
+		wincmd_redraw();
+#endif
 		updateScreen(CLEAR);
 		break;
 
@@ -443,8 +520,14 @@ getcount:
 				 * skip to start of identifier/string
 				 */
 				col = curwin->w_cursor.col;
+#ifdef KANJI
+				while (ptr[col] != NUL
+						&& (i == 0 ? !isidchar(ptr[col]) : iswhite(ptr[col]))
+						&& !ISkanji(ptr[col]))
+#else
 				while (ptr[col] != NUL &&
 							(i == 0 ? !isidchar(ptr[col]) : iswhite(ptr[col])))
+#endif
 					++col;
 
 				/*
@@ -452,9 +535,27 @@ getcount:
 				 * real vi but I like it a little better and it shouldn't bother
 				 * anyone.
 				 */
+#ifdef KANJI
+				if (ISkanji(ptr[col]))
+				{
+					int class;
+					class = jpcls(ptr[col], ptr[col+1]);
+					while (col > 0 && class == jpcls(ptr[col-2],ptr[col-1]))
+						col -= 2;
+				}
+				else
+				{
+					while (col > 0
+						&& ISkanjiPosition(ptr, col) == 0
+						&& (i == 0 ? isidchar(ptr[col - 1]) :
+								(!iswhite(ptr[col - 1]) && !isidchar(ptr[col - 1]))))
+						--col;
+				}
+#else
 				while (col > 0 && (i == 0 ? isidchar(ptr[col - 1]) :
 							(!iswhite(ptr[col - 1]) && !isidchar(ptr[col - 1]))))
 					--col;
+#endif
 
 				/*
 				 * if identifier found or not '*' or '#' command, stop searching
@@ -465,7 +566,12 @@ getcount:
 			/*
 			 * did't find an identifier of string
 			 */
+#ifdef KANJI
+			if (ptr[col] == NUL
+					|| (!isidchar(ptr[col]) && !ISkanji(ptr[col]) && i == 0))
+#else
 			if (ptr[col] == NUL || (!isidchar(ptr[col]) && i == 0))
+#endif
 			{
 				CLEAROPBEEP;
 				break;
@@ -497,12 +603,42 @@ sow:				if (i == 0)
 			/*
 			 * Now grab the chars in the identifier
 			 */
+#ifdef KANJI
+			if (ISkanji(ptr[col]))
+			{
+				int class;
+				class = jpcls(ptr[col], ptr[col+1]);
+				while (ptr[col] != NUL && class == jpcls(ptr[col],ptr[col+1]))
+				{
+					stuffcharReadbuff(ptr[col++]);
+					stuffcharReadbuff(ptr[col++]);
+				}
+			}
+			else
+			{
+# ifdef USE_TAGEX
+				if (p_tagex && i == 0 && c == Ctrl(']') && col > 0)
+				{
+					if (ptr[col - 1] == '~')
+						stuffcharReadbuff('~');
+				}
+# endif
+				while (!ISkanji(ptr[col])
+					&& (i == 0 ? isidchar(ptr[col]) :
+								(ptr[col] != NUL && !iswhite(ptr[col]))))
+				{
+					stuffcharReadbuff(ptr[col]);
+					++col;
+				}
+			}
+#else
 			while (i == 0 ? isidchar(ptr[col]) :
 								(ptr[col] != NUL && !iswhite(ptr[col])))
 			{
 				stuffcharReadbuff(ptr[col]);
 				++col;
 			}
+#endif
 			if ((c == '*' || c == '#') && i == 0)
 				stuffReadbuff((char_u *)"\\>");
 			stuffReadbuff((char_u *)"\n");
@@ -558,6 +694,10 @@ sow:				if (i == 0)
 		n = Prenum1;
 		while (n--)
 		{
+#ifdef TRACK
+			if (Track)
+				track_right();
+#endif
 			if (oneright() == FAIL)
 			{
 					/* space wraps to next line if 'whichwrap' bit 1 set */
@@ -600,6 +740,10 @@ sow:				if (i == 0)
 		n = Prenum1;
 		while (n--)
 		{
+#ifdef TRACK
+			if (Track)
+				track_left();
+#endif
 			if (oneleft() == FAIL)
 			{
 					/* backspace and del wrap to previous line if 'whichwrap'
@@ -632,6 +776,10 @@ sow:				if (i == 0)
 	  case 'k':
 	  case K_UARROW:
 	  case Ctrl('P'):
+#ifdef TRACK
+		if (Track)
+			track_up();
+#endif
 		mtype = MLINE;
 		if (oneup(Prenum1) == FAIL)
 			CLEAROPBEEP;
@@ -648,6 +796,10 @@ sow:				if (i == 0)
 	  case K_DARROW:
 	  case Ctrl('N'):
 	  case NL:
+#ifdef TRACK
+		if (Track)
+			track_down();
+#endif
 		mtype = MLINE;
 		if (onedown(Prenum1) == FAIL)
 			CLEAROPBEEP;
@@ -839,7 +991,11 @@ docsearch:
 		else
 			mincl = TRUE;
 		curwin->w_set_curswant = TRUE;
+#ifdef KANJI
+		if (!searchc(nchar, kchar, dir, type, Prenum1))
+#else
 		if (!searchc(nchar, dir, type, Prenum1))
+#endif
 			CLEAROPBEEP;
 		break;
 
@@ -1047,7 +1203,11 @@ docsearch:
 		 */
 		if (nchar == '\r' || nchar == '\n' || nchar == '\t')
 		{
+#ifdef KANJI
+			prep_redo(Prenum1, 'r', nchar, NUL, NUL);
+#else
 			prep_redo(Prenum1, 'r', nchar, NUL);
+#endif
 			stuffnumReadbuff(Prenum1);
 			stuffcharReadbuff('R');
 			stuffcharReadbuff(nchar);
@@ -1058,13 +1218,21 @@ docsearch:
 		if (nchar == Ctrl('V'))				/* get another character */
 		{
 			c = Ctrl('V');
+#ifdef KANJI
+			nchar = get_literal(&type, &kchar);
+#else
 			nchar = get_literal(&type);
+#endif
 			if (type)						/* typeahead */
 				stuffcharReadbuff(type);
 		}
 		else
 			c = NUL;
+#ifdef KANJI
+		prep_redo(Prenum1, 'r', c, nchar, kchar);
+#else
 		prep_redo(Prenum1, 'r', c, nchar);
+#endif
 		if (!u_save_cursor())				/* save line for undo */
 			break;
 			/*
@@ -1072,9 +1240,23 @@ docsearch:
 			 * At the same time we let know that the line will be changed.
 			 */
 		ptr = ml_get_buf(curbuf, curwin->w_cursor.lnum, TRUE) + curwin->w_cursor.col;
+#ifdef KANJI
+		{									/* replace the characters */
+			int		state = State;
+			FPOS	pos;
+
+			pos = curwin->w_cursor;
+			State = REPLACE;
+			while (Prenum1--)
+				inschar(nchar, kchar);
+			State = state;
+			curwin->w_cursor = pos;
+		}
+#else
 		curwin->w_cursor.col += Prenum1 - 1;
 		while (Prenum1--)					/* replace the characters */
 			*ptr++ = nchar;
+#endif
 		curwin->w_set_curswant = TRUE;
 		CHANGED;
 		updateline();
@@ -1102,7 +1284,11 @@ docsearch:
 			break;
 		}
 
+#ifdef KANJI
+		prep_redo(Prenum, 'J', NUL, NUL, NUL);
+#else
 		prep_redo(Prenum, 'J', NUL, NUL);
+#endif
 		dodojoin(Prenum, TRUE, TRUE);
 		modified = TRUE;
 		break;
@@ -1113,7 +1299,11 @@ docsearch:
 
 	  case 'p':
 		CHECKCLEAROPQ;
+#ifdef KANJI
+		prep_redo(Prenum, c, NUL, NUL, NUL);
+#else
 		prep_redo(Prenum, c, NUL, NUL);
+#endif
 		doput(dir, Prenum1, FALSE);
 		modified = TRUE;
 		break;
@@ -1122,7 +1312,11 @@ docsearch:
 	  case Ctrl('X'):			/* subtract from number */
 		CHECKCLEAROPQ;
 		if (doaddsub((int)c, Prenum1) == OK)
+#ifdef KANJI
+			prep_redo(Prenum1, c, NUL, NUL, NUL);
+#else
 			prep_redo(Prenum1, c, NUL, NUL);
+#endif
 		modified = TRUE;
 		break;
 
@@ -1229,7 +1423,11 @@ docsearch:
 				CLEAROPBEEP;
 				break;
 			}
+#ifdef KANJI
+			prep_redo(Prenum, '~', NUL, NUL, NUL);
+#else
 			prep_redo(Prenum, '~', NUL, NUL);
+#endif
 
 			if (!u_save_cursor())
 				break;
@@ -1340,6 +1538,10 @@ cursormark:
 			curwin->w_cursor = *pos;
 			if (flag)
 				beginline(TRUE);
+#ifdef KANJI
+			else if (ISkanjiCur() == 2)		/* kanji_align */
+				curwin->w_cursor.col--;
+#endif
 		}
 		mtype = flag ? MLINE : MCHAR;
 		mincl = FALSE;		/* ignored if not MCHAR */
@@ -1416,11 +1618,14 @@ cursormark:
 							Visual_block = TRUE;
 							break;
 
-				case 'v':		
+				case 'v':
 							if (resel_Visual_nlines <= 1)
 								curwin->w_cursor.col += resel_Visual_col * Prenum - 1;
 							else
 								curwin->w_cursor.col = resel_Visual_col;
+#ifdef KANJI
+							coladvance(curwin->w_curswant);
+#endif
 							break;
 				}
 				if (resel_Visual_col == MAXCOL)
@@ -1502,6 +1707,438 @@ gotofile:
 						}
 						break;
 
+#ifdef TRACK
+						/*
+						 * "gx": track mode
+						 */
+			case 'x':	if (Track == TRUE)
+						{
+							MSG("");
+							Track = FALSE;
+						}
+						else
+						{
+							showtrack();
+							Track = TRUE;
+						}
+						break;
+
+						/*
+						 * "gp": track mode previous
+						 */
+			case 'p':	if (Track)
+							curbuf->b_p_trs = tracktab_prev(curbuf->b_p_trs);
+						break;
+
+						/*
+						 * "gn": track mode next
+						 */
+			case 'n':	if (Track)
+							curbuf->b_p_trs = tracktab_next(curbuf->b_p_trs);
+						break;
+#endif
+#ifdef NT
+						/*
+						 * "gX": delete
+						 */
+			case 'X':	wincmd_delete();
+						break;
+
+						/*
+						 * "gC": cut
+						 */
+			case 'C':	wincmd_cut();
+						break;
+
+						/*
+						 * "gV": paste
+						 */
+			case 'V':	wincmd_paste();
+						break;
+#endif
+#ifndef notdef
+						/*
+						 * "gh": goto help
+						 */
+			case 'h':	help();
+						break;
+
+						/*
+						 * "gg": jump grep file
+						 */
+			case 'g':	{
+							char_u		*	name;
+							char_u		*	line = NULL;
+							char_u		*	p;
+							char			sep = ':';
+							char_u			linebuf[256];
+							char_u			filebuf[MAXPATHL];
+
+							ptr = name = ml_get(curwin->w_cursor.lnum);
+							while (*ptr)
+							{
+								if (*ptr == '"')
+								{
+									ptr++;
+									while (*ptr)
+									{
+										if (*ptr == '"')
+											break;
+										ptr++;
+									}
+									if (*ptr == NUL)	/* nothing found */
+									{
+										CLEAROPBEEP;
+										goto error;
+									}
+								}
+								else if (*ptr == sep)
+								{
+									p = &ptr[1];
+									while (*p)
+									{
+										if ('0' <= *p && *p <= '9')
+											;
+										else if (*p == sep)
+										{
+											line = &ptr[1];
+											ptr = p;
+											break;
+										}
+										else
+											break;
+										p++;
+									}
+									if (line != NULL)
+										break;
+								}
+								ptr++;
+							}
+							if (line == NULL)	/* nothing found */
+							{
+								CLEAROPBEEP;
+								goto error;
+							}
+							setpcmark();
+							STRNCPY(linebuf, line, ptr - line);
+							linebuf[ptr - line] = NUL;
+							STRNCPY(NameBuff, name, line - name - 1);
+							NameBuff[line - name - 1] = NUL;
+							if (NameBuff[0] != '"')
+								STRCPY(filebuf, NameBuff);
+							else
+							{
+								NameBuff[line - name - 2] = NUL;
+								STRCPY(filebuf, &NameBuff[1]);
+							}
+							if (getperm(filebuf) == (-1) || atol(linebuf) == 0)
+							{
+								CLEAROPBEEP;
+								goto error;
+							}
+# ifdef NT
+							if (wincmd_grep(linebuf, filebuf))
+								;
+							else
+# endif
+# if 1
+							{
+								static WIN		*	swin = NULL;
+								static char_u	*	sname = NULL;
+								/* WIN			*	cwin = curwin; */
+								WIN				*	wp = firstwin;
+
+								while (wp != NULL)
+								{
+									if (wp == swin && strcmp(wp->w_buffer->b_sfilename, sname) == 0)
+										break;
+									wp = wp->w_next;
+								}
+								if (wp != NULL && strcmp(wp->w_buffer->b_sfilename, filebuf) == 0)
+								{
+									win_enter(wp, TRUE);
+									curwin->w_cursor.lnum = atol(linebuf);
+									beginline(TRUE);
+									setcursor();
+									updateScreen(CURSUPD);
+								}
+								else if (wp != NULL)
+								{
+									if (wp->w_buffer->b_changed && wp->w_buffer->b_nwindows <= 1)
+										autowrite(wp->w_buffer);
+									win_enter(wp, TRUE);
+									if (wp->w_buffer->b_changed)
+									{
+										EMSG("No write since last change)");
+										break;
+									}
+									(void)doecmd(filebuf, NULL, NULL, FALSE, atol(linebuf));
+								}
+								else
+								{
+									if (win_split(0L, FALSE) == FAIL)
+										break;
+									(void)doecmd(filebuf, NULL, NULL, FALSE, atol(linebuf));
+								}
+								swin = curwin;
+								if (sname != NULL)
+									free(sname);
+								sname = strsave(filebuf);
+								/* win_enter(cwin, TRUE); */
+							}
+# else
+							{
+								if (curbuf->b_changed && curbuf->b_nwindows <= 1 && !p_hid)
+									autowrite(curbuf);
+								stuffReadbuff(":e +");
+								stuffReadbuff(linebuf);
+								stuffReadbuff(" ");
+								stuffReadbuff(filebuf);
+								stuffReadbuff((char_u *) "\n");
+							}
+# endif
+						}
+error:
+						break;
+#endif
+#if defined(NT) && defined(USE_EXFILE) && defined(USE_MATOME)
+						/*
+						 * "gu": gzip+uuencode and other filter
+						 */
+			case 'u':	if (VIsual.lnum)
+						{
+							linenr_t		line1;
+							linenr_t		line2;
+
+							curbuf->b_startop = VIsual;
+							if (lt(curbuf->b_startop, curwin->w_cursor))
+							{
+								curbuf->b_endop = curwin->w_cursor;
+								curwin->w_cursor = curbuf->b_startop;
+							}
+							else
+							{
+								curbuf->b_endop = curbuf->b_startop;
+								curbuf->b_startop = curwin->w_cursor;
+							}
+							line1 = curbuf->b_startop.lnum;
+							line2 = curbuf->b_endop.lnum;
+							decode(FALSE, line1, line2);
+							VIsual.lnum = 0;
+							updateScreen(NOT_VALID);		/* delete the inversion */
+						}
+						break;
+#endif
+#ifndef notdef
+						/*
+						 * "gc": count charactor
+						 */
+			case 'c':	if (VIsual.lnum)
+						{
+							linenr_t		line;
+							long			count = 0;
+
+							curbuf->b_startop = VIsual;
+							if (lt(curbuf->b_startop, curwin->w_cursor))
+							{
+								curbuf->b_endop = curwin->w_cursor;
+								curwin->w_cursor = curbuf->b_startop;
+							}
+							else
+							{
+								curbuf->b_endop = curbuf->b_startop;
+								curbuf->b_startop = curwin->w_cursor;
+							}
+							if (ISkanjiFpos(&curbuf->b_endop))
+								curbuf->b_endop.col++;
+							if (curbuf->b_startop.lnum == curbuf->b_endop.lnum
+															&& mtype == MCHAR)
+								count = curbuf->b_endop.col - curbuf->b_startop.col + 1;
+							else
+							{
+								for (line = curbuf->b_startop.lnum;
+										line <= curbuf->b_endop.lnum; line++)
+								{
+									if (mtype == MLINE)
+										count += strlen(ml_get(line)) + (curbuf->b_p_tx ? 2 : 1);
+									else if (line == curbuf->b_startop.lnum)
+										count += strlen(ml_get(line)) - curbuf->b_startop.col + (curbuf->b_p_tx ? 2 : 1);
+									else if (line == curbuf->b_endop.lnum)
+										count += curbuf->b_endop.col + 1;
+									else
+										count += strlen(ml_get(line)) + (curbuf->b_p_tx ? 2 : 1);
+								}
+							}
+							VIsual.lnum = 0;
+							updateScreen(NOT_VALID);
+							setcursor();
+							updateScreen(CURSUPD);
+							smsg((char_u *)"%ld character%s.", count, plural(count));
+						}
+						break;
+
+						/*
+						 * "gj": logical line down
+						 */
+			case 'j':	if (curwin->w_p_wrap)
+						{
+							int				vpos	= (curwin->w_curswant + (curwin->w_p_nu ? 8 : 0)) % Columns;
+							int				vcol	= getvcol(curwin, &curwin->w_cursor, 99);
+							int				tcol;
+							FPOS			cursor;
+
+							if (vcol % Columns != vpos)
+								vcol = (vcol / Columns) * Columns + vpos;
+							while (Prenum1)
+							{
+								cursor.lnum = curwin->w_cursor.lnum;
+								cursor.col  = strlen(ml_get(curwin->w_cursor.lnum));
+								tcol = getvcol(curwin, &cursor, 99);
+								if (tcol <= (vcol + Columns))
+								{
+									Prenum1 --;
+									if (tcol <= ((vcol / Columns) + 1) * Columns)
+									{
+										if (curwin->w_cursor.lnum
+													< curwin->w_buffer->b_ml.ml_line_count)
+										{
+											curwin->w_cursor.lnum ++;
+											curwin->w_cursor.col = 0;
+											vcol = vpos;
+										}
+										else
+											break;
+									}
+									else if ((tcol % Columns) <= vpos)
+										vcol = tcol;
+								}
+								else
+								{
+									vcol += Columns;
+									Prenum1 --;
+								}
+							}
+							curwin->w_curswant = (vcol / Columns) * Columns + vpos - (curwin->w_p_nu ? 8 : 0);
+							curwin->w_cursor.col = vcol2col(curwin, curwin->w_cursor.lnum, vcol, NULL, curwin->w_p_nu, Columns);
+							curs_columns(TRUE);
+						}
+						else
+							onedown(Prenum1);
+						break;
+
+						/*
+						 * "gk": logical line up
+						 */
+			case 'k':	if (curwin->w_p_wrap)
+						{
+							int				vpos	= (curwin->w_curswant + (curwin->w_p_nu ? 8 : 0)) % Columns;
+							int				vcol	= getvcol(curwin, &curwin->w_cursor, 99);
+							FPOS			cursor;
+
+							while (Prenum1)
+							{
+								if (vcol >= Columns)
+									vcol = ((vcol / Columns) - 1) * Columns + vpos;
+								else if (curwin->w_cursor.lnum > 1)
+								{
+									curwin->w_cursor.lnum--;
+									curwin->w_cursor.col = strlen(ml_get(curwin->w_cursor.lnum));
+									cursor = curwin->w_cursor;
+									vcol = getvcol(curwin, &cursor, 99);
+									if (vcol > Columns)
+										vcol = (vcol / Columns) * Columns + vpos;
+									else
+										vcol = vpos;
+								}
+								else
+									break;
+								Prenum1--;
+							}
+							curwin->w_curswant = (vcol / Columns) * Columns + vpos - (curwin->w_p_nu ? 8 : 0);
+							curwin->w_cursor.col = vcol2col(curwin, curwin->w_cursor.lnum, vcol, NULL, curwin->w_p_nu, Columns);
+							curs_columns(TRUE);
+						}
+						else
+							oneup(Prenum1);
+						break;
+
+						/*
+						 * "g0": logical line top
+						 */
+			case '0':	if (curwin->w_p_wrap)
+						{
+							int				vcol	= getvcol(curwin, &curwin->w_cursor, 99);
+
+							vcol = (vcol / Columns) * Columns;
+							curwin->w_curswant = (vcol / Columns) * Columns - (curwin->w_p_nu ? 8 : 0);
+							curwin->w_cursor.col = vcol2col(curwin, curwin->w_cursor.lnum, vcol, NULL, curwin->w_p_nu, Columns);
+							curs_columns(TRUE);
+						}
+						else
+						{
+							mtype = MCHAR;
+							mincl = FALSE;
+							beginline(FALSE);
+						}
+						break;
+
+						/*
+						 * "g^": logical line top character
+						 */
+			case '^':	if (curwin->w_p_wrap)
+						{
+							int				vcol	= getvcol(curwin, &curwin->w_cursor, 99);
+							char_u		*	p;
+
+							vcol = (vcol / Columns) * Columns;
+							curwin->w_curswant = (vcol / Columns) * Columns - (curwin->w_p_nu ? 8 : 0);
+							curwin->w_cursor.col = vcol2col(curwin, curwin->w_cursor.lnum, vcol, NULL, curwin->w_p_nu, Columns);
+							p = ml_get(curwin->w_cursor.lnum);
+							while (p[curwin->w_cursor.col])
+							{
+								if (!isspace(p[curwin->w_cursor.col]))
+									break;
+								curwin->w_cursor.col++;
+							}
+							if (p[curwin->w_cursor.col] == NUL)
+							{
+								if (ISkanjiPosition(p, curwin->w_cursor.col) == 2)
+									curwin->w_cursor.col--;
+								curwin->w_cursor.col--;
+							}
+							curs_columns(TRUE);
+						}
+						else
+						{
+							mtype = MCHAR;
+							mincl = FALSE;
+							beginline(TRUE);
+						}
+						break;
+
+						/*
+						 * "g$": logical line bottom
+						 */
+			case '$':	if (curwin->w_p_wrap)
+						{
+							int				vcol	= getvcol(curwin, &curwin->w_cursor, 99);
+
+							vcol = ((vcol / Columns) + 1) * Columns - 1;
+							curwin->w_curswant = ((vcol / Columns) + 1) * Columns - (curwin->w_p_nu ? 8 : 0) - 1;
+							curwin->w_cursor.col = vcol2col(curwin, curwin->w_cursor.lnum, vcol, NULL, curwin->w_p_nu, Columns);
+							vcol = getvcol(curwin, &curwin->w_cursor, 99);
+							curs_columns(TRUE);
+						}
+						else
+						{
+							mtype = MCHAR;
+							mincl = TRUE;
+							curwin->w_curswant = MAXCOL;
+							onedown((long)(Prenum1 - 1));
+						}
+						break;
+#endif
+
 			default:	CLEAROPBEEP;
 						break;
 		}
@@ -1511,6 +2148,14 @@ gotofile:
  * The end
  */
 	  case ESC:
+#ifdef TRACK
+		if (Track)
+		{
+			Track = FALSE;				/* stop track mode */
+			MSG("");
+			break;
+		}
+#endif
 	    if (VIsual.lnum)
 		{
 			VIsual.lnum = 0;			/* stop Visual */
@@ -1546,7 +2191,11 @@ gotofile:
 	{
 		if (operator != YANK && !VIsual.lnum)		/* can't redo yank */
 		{
+#ifdef KANJI
+			prep_redo(Prenum, opchars[operator - 1], c, nchar, kchar);
+#else
 			prep_redo(Prenum, opchars[operator - 1], c, nchar);
+#endif
 			if (c == '/' || c == '?')				/* was a search */
 			{
 				AppendToRedobuff(searchbuff);
@@ -1567,7 +2216,7 @@ gotofile:
 						Visual_block = TRUE;
 						break;
 
-			case 'v':		
+			case 'v':
 						if (redo_Visual_nlines <= 1)
 							curwin->w_cursor.col += redo_Visual_col - 1;
 						else
@@ -1592,6 +2241,10 @@ gotofile:
 		{
 			curbuf->b_endop = curwin->w_cursor;
 			curwin->w_cursor = curbuf->b_startop;
+#ifndef notdef
+			if (operator == YANK && VIsual.lnum && VIsual.col == VISUALLINE)
+				curwin->w_cursor.col = 0;
+#endif
 		}
 		else
 		{
@@ -1652,7 +2305,11 @@ gotofile:
 			resel_Visual_nlines = nlines;
 			if (operator != YANK && operator != COLON)	/* can't redo yank and : */
 			{
+#ifdef KANJI
+				prep_redo(0L, 'v', opchars[operator - 1], NUL, NUL);
+#else
 				prep_redo(0L, 'v', opchars[operator - 1], NUL);
+#endif
 				redo_Visual_type = resel_Visual_type;
 				redo_Visual_col = resel_Visual_col;
 				redo_Visual_nlines = resel_Visual_nlines;
@@ -1692,6 +2349,14 @@ gotofile:
 
 			/* no_op is set when start and end are the same */
 		no_op = (mtype == MCHAR && !mincl && equal(curbuf->b_startop, curbuf->b_endop));
+#ifdef KANJI
+		if (mincl && curbuf->b_endop.col != VISUALLINE
+										&& ISkanji(gchar(&curbuf->b_endop)))
+		{
+			mincl = FALSE;
+			curbuf->b_endop.col += 2;
+		}
+#endif
 
 	/*
 	 * If the end of an operator is in column one while mtype is MCHAR and mincl
@@ -1798,6 +2463,19 @@ normal_end:
 		startinsert(restart_edit, FALSE, 1L);
 		modified = TRUE;
 	}
+#ifdef FEPCTRL
+	else if (curbuf->b_p_fc)
+	{
+		if (FepOn && !command_busy)
+			curbuf->fepmode = fep_get_mode();
+		if (fep_get_mode())
+			fep_force_off();
+	}
+	FepOn = FALSE;
+# if defined(CANNA) || defined(ONEW)
+	fep_visualmode(FALSE);
+# endif
+#endif
 
 	checkpcmark();			/* check if we moved since setting pcmark */
 
@@ -1819,11 +2497,18 @@ normal_end:
 }
 
 	static void
+#ifdef KANJI
+prep_redo(num, cmd, c, nchar, kchar)
+#else
 prep_redo(num, cmd, c, nchar)
+#endif
 	long 	num;
 	int		cmd;
 	int		c;
 	int		nchar;
+#ifdef KANJI
+	int		kchar;
+#endif
 {
 	ResetRedobuff();
 	if (yankbuffer != 0)	/* yank from specified buffer */
@@ -1837,7 +2522,15 @@ prep_redo(num, cmd, c, nchar)
 	if (c != NUL)
 		AppendCharToRedobuff(c);
 	if (nchar != NUL)
+#ifdef KANJI
+	{
 		AppendCharToRedobuff(nchar);
+		if (ISkanji(nchar))
+			AppendCharToRedobuff(kchar);
+	}
+#else
+		AppendCharToRedobuff(nchar);
+#endif
 }
 
 /*
@@ -1924,7 +2617,11 @@ premsg(c1, c2)
 		*p = NUL;
 		if (c1)
 			STRCPY(p, transchar(c1));
+#ifdef KANJI
+		if (c2 && !ISkanji(c2))
+#else
 		if (c2)
+#endif
 			STRCAT(p, transchar(c2));
 		buf[10] = NUL;			/* truncate at maximal length */
 		msg_outstr(buf);

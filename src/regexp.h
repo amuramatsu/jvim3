@@ -30,6 +30,11 @@ typedef struct regexp {
 	char_u			program[1]; /* Unwarranted chumminess with compiler. */
 }				regexp;
 
+#ifdef ONEW
+#define regcomp RegComp
+#define regexec RegExec
+#endif
+
 /* regexp.c */
 regexp *regcomp __ARGS((char_u *));
 int regexec __ARGS((regexp *, char_u *, int));

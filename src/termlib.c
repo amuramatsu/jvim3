@@ -12,7 +12,7 @@
 #include "proto.h"
 #include "proto/termlib.pro"
 
-#ifndef AMIGA
+#if !defined(__CYGWIN__) && !defined(AMIGA) && !defined(MSDOS)	/* DOSGEN */
 # include <sgtty.h>
 #endif
 
@@ -27,8 +27,12 @@ static char	*_find __PARMS((char *, char *));
  */
 
 char	*tent;                /* Pointer to terminal entry, set by tgetent */
+#ifdef MSDOS		/* DOSGEN */
+extern char		PC, *UP, *BC;
+#else
 char	PC = 0;               /* Pad character, default NULL */
 char	*UP = 0, *BC = 0;     /* Pointers to UP and BC strings from database */
+#endif
 short	ospeed;               /* Baud rate (1-16, 1=300, 16=19200), as in stty */
 
 /*
@@ -77,7 +81,11 @@ tgetent(tbuf, term)
 
 	if ((tmp = (char *)vimgetenv("TERMCAP")) != NULL)
 	{
+#ifdef MSDOS		/* DOSGEN */
+		if (*tmp == '/' || *tmp == '\\' || tmp[1] == ':')
+#else
 		if (*tmp == '/')            /* TERMCAP = name of termcap file */
+#endif
 			tcap = tmp ;
 		else                    	/* TERMCAP = termcap entry itself */
 		{
@@ -98,7 +106,7 @@ tgetent(tbuf, term)
 			}
 		}
 	}
-	if (!(termcap = fopen(tcap, "r")))
+	if ((termcap = fopen(tcap, "r")) == NULL)
 	{
 		strcpy(tbuf, tcap);
 		return -1;
@@ -107,7 +115,7 @@ tgetent(tbuf, term)
 	len = 0;
 	while (getent(tbuf + len, term, termcap, TBUFSZ - len))
 	{
-		if ((term = tgetstr("tc", &tcptr)))         /* extended entry */
+		if ((term = tgetstr("tc", &tcptr)) != NULL)     /* extended entry */
 		{
 			rewind(termcap);
 			len = strlen(tbuf);
@@ -164,6 +172,15 @@ nextent(tbuf, termcap, buflen)         /* Read 1 entry from TERMCAP file */
 	      fgets(lbuf, (int)(tbuf+buflen-lbuf), termcap))        /* another line */
 	{
 		int llen = strlen(lbuf);
+
+#ifdef MSDOS		/* DOSGEN */
+		if (lbuf[llen-2] == '\r' && lbuf[llen-1] == '\n')
+		{
+			lbuf[llen-2] = '\n';
+			lbuf[llen-1] = '\0';
+			llen--;
+		}
+#endif
 
 		if (*lbuf == '#')                               /* eat comments */
 			continue;
@@ -441,8 +458,8 @@ int	col,                                           /* column, x position */
 				col ^= 0140;
 				break;
 			case 'B':                            /* bcd encoding */
-				line = line/10<<4+line%10;
-				col = col/10<<4+col%10;
+				line = ((line/10)<<4)+line%10;
+				col = ((col/10)<<4)+col%10;
 				break;
 			case 'D':                   /* magic Delta Data code */
 				line = line-2*(line&15);
@@ -563,6 +580,7 @@ char *cp;                                                 /* string to print */
 int affcnt;                                      /* Number of lines affected */
 void (*outc) __ARGS((unsigned int));                              /* routine to output 1 character */
 {
+#ifndef MSDOS		/* DOSGEN */
 	long	frac,                    /* 10^(#digits after decimal point) */
 		counter,                                           /* digits */
 		atol();
@@ -596,6 +614,12 @@ void (*outc) __ARGS((unsigned int));                              /* routine to 
 	else
 		while (*cp)
 			(*outc)(*cp++);
+#else
+	while (isdigit(*cp) || *cp == '.')
+		cp++;
+	while (*cp)
+		(*outc)(*cp++);
+#endif
 	return 0;
 }
 

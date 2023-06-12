@@ -17,6 +17,12 @@
 #include "globals.h"
 #include "proto.h"
 #include "param.h"
+#ifdef KANJI
+# include "kanji.h"
+# ifdef USE_LOCALE
+#  include <locale.h>
+# endif
+#endif
 
 struct param
 {
@@ -63,6 +69,33 @@ struct param
 #define PV_TX		31
 #define PV_WM		33
 
+#ifdef KANJI
+# define PV_JC		35
+# ifdef UCODE
+#  define PV_UB		37
+# endif
+#endif
+#ifdef CRMARK
+# define PV_CR		39
+#endif
+#ifdef TRACK
+# define PV_TRS		41
+# define PV_TT		43
+#endif
+#ifdef FEPCTRL
+#define PV_FC		45
+# define PV_JI		47
+#endif
+#ifdef USE_OPT
+# define PV_OPT		49
+#endif
+#if defined(NT) && defined(USE_EXFILE) && defined(USE_MATOME)
+# define PV_EC		51
+#endif
+#if defined(KANJI) && defined(NT) && defined(SYNTAX)
+# define PV_SYT		53
+#endif
+
 /*
  * The param structure is initialized here.
  * The order of the parameters should be alfabetic
@@ -76,22 +109,37 @@ static struct param params[] =
 		{"autowrite",	"aw",	P_BOOL,				(char_u *)&p_aw},
 		{"backspace",	"bs",	P_NUM,				(char_u *)&p_bs},
 		{"backup",		"bk",	P_BOOL,				(char_u *)&p_bk},
-#ifdef UNIX
+#if defined(UNIX) || (defined(NT) && !defined(notdef))
  		{"backupdir",	"bdir",	P_STRING|P_EXPAND,	(char_u *)&p_bdir},
+#else
+ 		{"backupdir",	"bdir",	P_STRING,			(char_u *)NULL},
 #endif
 		{"beautify",	"bf",	P_BOOL,				(char_u *)NULL},
 		{"binary",		"bin",	P_BOOL|P_IND,		(char_u *)PV_BIN},
-#ifdef MSDOS
+#if defined(MSDOS) && !defined(TERMCAP)		/* DOSGEN */
 		{"bioskey",		"biosk",P_BOOL,				(char_u *)&p_biosk},
 #endif
 		{"cmdheight",	"ch",	P_NUM,				(char_u *)&p_ch},
+#ifdef NT
+		{"codepage",	"cpg",	P_NUM,				(char_u *)&p_cpage},
+#endif
 		{"columns",		"co",	P_NUM,				(char_u *)&Columns},
 		{"compatible",	"cp",	P_BOOL,				(char_u *)&p_cp},
+#ifdef CRMARK
+		{"crchar",		"cc",	P_STRING,			(char_u *)&p_cc},
+		{"crmark",		"cm",	P_BOOL|P_IND,		(char_u *)PV_CR},
+#endif
+#if defined(NT) && defined(USE_MATOME)
+		{"decode",		"dc",	P_STRING,			(char_u *)&p_dc},
+#endif
 #ifdef DIGRAPHS
 		{"digraph",		"dg",	P_BOOL,				(char_u *)&p_dg},
 #endif /* DIGRAPHS */
  		{"directory",	"dir",	P_STRING|P_EXPAND,	(char_u *)&p_dir},
 		{"edcompatible",NULL,	P_BOOL,				(char_u *)&p_ed},
+#if defined(NT) && defined(USE_EXFILE) && defined(USE_MATOME)
+		{"encode",		"ec",  	P_STRING|P_IND,		(char_u *)PV_EC},
+#endif
 		{"endofline",	"eol",	P_BOOL|P_IND,		(char_u *)PV_EOL},
 		{"equalalways",	"ea",  	P_BOOL,				(char_u *)&p_ea},
 		{"equalprg",	"ep",  	P_STRING|P_EXPAND,	(char_u *)&p_ep},
@@ -101,6 +149,17 @@ static struct param params[] =
 		{"esckeys",		"ek",	P_BOOL,				(char_u *)&p_ek},
 		{"expandtab",	"et",	P_BOOL|P_IND,		(char_u *)PV_ET},
 		{"exrc",		NULL,	P_BOOL,				(char_u *)&p_exrc},
+#ifdef FEPCTRL
+		{"fepctrl",		"fc",	P_BOOL|P_IND,		(char_u *)PV_FC},
+		{"fepkey",		"fk",	P_STRING,			(char_u *)&p_fk},
+		{"fepkeys",		"fo",	P_STRING,			(char_u *)&p_fo},
+#endif
+#ifdef FEXRC
+		{"fexrc",		"fe",	P_BOOL,				(char_u *)&p_fexrc},
+#endif
+#ifdef USE_OPT
+		{"foption",		"fopt",	P_NUM|P_IND,		(char_u *)PV_OPT},
+#endif
 		{"formatprg",	"fp",  	P_STRING|P_EXPAND,	(char_u *)&p_fp},
 		{"gdefault",	"gd",	P_BOOL,				(char_u *)&p_gd},
 		{"graphic",		"gr",	P_BOOL,				(char_u *)&p_gr},
@@ -113,6 +172,28 @@ static struct param params[] =
 		{"ignorecase",	"ic",	P_BOOL,				(char_u *)&p_ic},
 		{"insertmode",	"im",	P_BOOL,				(char_u *)&p_im},
 		{"joinspaces", 	"js",	P_BOOL,				(char_u *)&p_js},
+#if defined(KANJI) && defined(UCODE)
+		{"jbigendian",	"jb",	P_BOOL|P_IND,		(char_u *)PV_UB},
+#endif
+#ifdef KANJI
+		{"jcode",		"jc",  	P_STRING|P_IND,		(char_u *)PV_JC},
+#endif
+#ifdef FEPCTRL
+		{"jiauto", 		"ja",	P_NUM,				(char_u *)&p_ja},
+#endif
+#ifdef KANJI
+		{"jignorecase",	"jic",	P_BOOL,				(char_u *)&p_jic},
+#endif
+#ifdef FEPCTRL
+		{"jinsertmode", "ji",	P_STRING|P_IND,		(char_u *)PV_JI},
+#endif
+#ifdef KANJI
+		{"jjoinspaces",	"jjs",	P_BOOL,				(char_u *)&p_jjs},
+		{"jkanaconv",	"jkc", 	P_BOOL,				(char_u *)&p_jkc},
+		{"jmask",		"jm",  	P_STRING,			(char_u *)&p_jp},
+		{"jreplace",	"jrep",	P_BOOL,				(char_u *)&p_jrep},
+		{"jtilde",		"jt", 	P_BOOL,				(char_u *)&p_jt},
+#endif
 		{"keywordprg",	"kp",  	P_STRING|P_EXPAND,	(char_u *)&p_kp},
 		{"laststatus",	"ls", 	P_NUM,				(char_u *)&p_ls},
 		{"lines",		NULL, 	P_NUM,				(char_u *)&Rows},
@@ -128,8 +209,14 @@ static struct param params[] =
 		{"more",		NULL,	P_BOOL,				(char_u *)&p_more},
 		{"nobuf",		"nb",	P_BOOL,				(char_u *)&p_nb},
 		{"number",		"nu",	P_BOOL|P_IND,		(char_u *)PV_NU},
+#if defined(FEPCTRL) && defined(ONEW)
+		{"onewredraw",	"or",	P_BOOL,				(char_u *)&p_ordw},
+#endif
 		{"open",		NULL,	P_BOOL,				(char_u *)NULL},
 		{"optimize",	"opt",	P_BOOL,				(char_u *)NULL},
+#ifdef USE_OPT
+		{"option",		NULL,	P_NUM,				(char_u *)&p_opt},
+#endif
 		{"paragraphs",	"para",	P_STRING,			(char_u *)&p_para},
 		{"paste",		NULL,	P_BOOL,				(char_u *)&p_paste},
 		{"patchmode",   "pm",   P_STRING,			(char_u *)&p_pm},
@@ -150,7 +237,7 @@ static struct param params[] =
 		{"shelltype",	"st",	P_NUM,				(char_u *)&p_st},
 		{"shiftround",	"sr",	P_BOOL,				(char_u *)&p_sr},
 		{"shiftwidth",	"sw",	P_NUM|P_IND,		(char_u *)PV_SW},
-#ifndef MSDOS
+#if !defined(MSDOS) || defined(NT)
 		{"shortname",	"sn",	P_BOOL|P_IND,		(char_u *)PV_SN},
 #endif
 		{"showcmd",		"sc",	P_BOOL,				(char_u *)&p_sc},
@@ -160,10 +247,21 @@ static struct param params[] =
 		{"slowopen",	"slow",	P_BOOL,				(char_u *)NULL},
 		{"smartindent", "si",	P_BOOL|P_IND,		(char_u *)PV_SI},
 		{"smarttab",	"sta",	P_BOOL,				(char_u *)&p_sta},
+#ifndef notdef	/* vim 5.X compatible */
+		{"softtabstop", "sts",  P_BOOL,				(char_u *)NULL},
+#endif
 		{"sourceany",	NULL,	P_BOOL,				(char_u *)NULL},
 		{"splitbelow",	"sb",	P_BOOL,				(char_u *)&p_sb},
 		{"suffixes",	"su",	P_STRING,			(char_u *)&p_su},
+#if defined(KANJI) && defined(NT) && defined(SYNTAX)
+		{"syntax",		"syn",	P_BOOL|P_IND,		(char_u *)PV_SYT},
+		{"syntype",		"syt",	P_STRING,			(char_u *)&p_synt},
+		{"synlines",	"syl",	P_NUM,				(char_u *)&p_synl},
+#endif
 		{"tabstop", 	"ts",	P_NUM|P_IND,		(char_u *)PV_TS},
+#ifdef USE_TAGEX
+		{"tagex",		"te",	P_BOOL,				(char_u *)&p_tagex},
+#endif
 		{"taglength",	"tl",	P_NUM,				(char_u *)&p_tl},
 		{"tagrelative",	"tr",	P_BOOL,				(char_u *)&p_tr},
 		{"tags",		NULL,	P_STRING|P_EXPAND,	(char_u *)&p_tags},
@@ -176,7 +274,13 @@ static struct param params[] =
 		{"timeout", 	NULL,	P_BOOL,				(char_u *)&p_timeout},
 		{"timeoutlen",	"tm",	P_NUM,				(char_u *)&p_tm},
 		{"title",	 	NULL,	P_BOOL,				(char_u *)&p_title},
+#ifdef TRACK
+		{"trackset", 	"trs",	P_STRING|P_IND,		(char_u *)PV_TRS},
+#endif
 		{"ttimeout", 	NULL,	P_BOOL,				(char_u *)&p_ttimeout},
+#ifdef TRACK
+		{"ttrack", 		"tt",	P_BOOL|P_IND,		(char_u *)PV_TT},
+#endif
 		{"ttyfast", 	"tf",	P_BOOL,				(char_u *)&p_tf},
 		{"ttytype",		NULL,	P_STRING,			(char_u *)NULL},
 		{"undolevels",	"ul",	P_NUM,				(char_u *)&p_ul},
@@ -190,7 +294,15 @@ static struct param params[] =
 		{"weirdinvert",	"wi",	P_BOOL,				(char_u *)&p_wi},
 		{"whichwrap",	"ww",	P_NUM,				(char_u *)&p_ww},
 		{"wildchar",	"wc", 	P_NUM,				(char_u *)&p_wc},
+#ifdef NT
+		{"window",		"win", 	P_STRING,			(char_u *)&p_win},
+#else
+# ifndef notdef
+		{"window",		"win", 	P_STRING,			(char_u *)NULL},
+# else
 		{"window",		NULL, 	P_NUM,				(char_u *)NULL},
+# endif
+#endif
 		{"winheight",	"wh",	P_NUM,				(char_u *)&p_wh},
 		{"wrap",		NULL,	P_BOOL|P_IND,		(char_u *)PV_WRAP},
 		{"wrapmargin",	"wm",	P_NUM|P_IND,		(char_u *)PV_WM},
@@ -255,8 +367,17 @@ static struct param params[] =
 		{"t_sf9",		NULL,	P_STRING,	(char_u *)&term_strings.t_sf9},
 		{"t_sf10",		NULL,	P_STRING,	(char_u *)&term_strings.t_sf10},
 		{"t_help",		NULL,	P_STRING,	(char_u *)&term_strings.t_help},
+#if defined(KANJI) && defined(MSDOS)
+		{"t_del",		NULL,	P_STRING,	(char_u *)&term_strings.t_del},
+#endif
 		{"t_undo",		NULL,	P_STRING,	(char_u *)&term_strings.t_undo},
 		{"t_csc",		NULL,	P_STRING,	(char_u *)&term_strings.t_csc},
+#if defined(FEPCTRL) && !defined(MSDOS)
+		{"t_us",		NULL,	P_STRING,	(char_u *)&term_strings.t_us},
+		{"t_ue",		NULL,	P_STRING,	(char_u *)&term_strings.t_ue},
+		{"t_fb",		NULL,	P_STRING,	(char_u *)&term_strings.t_fb},
+		{"t_fq",		NULL,	P_STRING,	(char_u *)&term_strings.t_fq},
+#endif
 		{NULL, NULL, 0, NULL}			/* end marker */
 };
 
@@ -278,6 +399,49 @@ set_init()
 	char_u	*p;
 	int		i;
 
+#ifdef KANJI
+	if (p_jp == NULL)
+	{
+		static char p_jp_init[4];
+
+		STRCPY(p_jp_init, JP_DEF);
+# ifdef UNIX
+		p = NULL;
+#  ifdef USE_LOCALE
+		p = setlocale(LC_CTYPE, "");
+		if (p == NULL)
+			p = vimgetenv((char_u *)"LC_CTYPE");
+#  endif
+		if (p == NULL)
+			p = vimgetenv((char_u *)"LANG");
+		if (p != NULL)
+		{
+			if ((STRCMP(p, "ja_JP.JIS") == 0)
+					|| (STRCMP(p, "ja_JP.ISO-2022-JP") == 0)
+					|| (STRCMP(p, "ja_JP.jis7") == 0))
+				STRCPY(p_jp_init, "JJJ");
+			else if ((STRCMP(p, "ja_JP.eucJP") == 0)
+					|| (STRCMP(p, "ja_JP.EUC") == 0)
+					|| (STRCMP(p, "ja") == 0)
+					|| (STRCMP(p, "japanese") == 0)
+					|| (STRCMP(p, "japanese.euc") == 0)
+					|| (STRCMP(p, "ja_JP.ujis") == 0))
+				STRCPY(p_jp_init, "EEE");
+			else if ((STRCMP(p, "ja_JP.SJIS") == 0)
+					|| (STRCMP(p, "ja_JP.PCK") == 0)
+					|| (STRCMP(p, "ja_JP.mscode") == 0))
+				STRCPY(p_jp_init, "SSS");
+#  ifdef UCODE
+			else if (STRCMP(p, "en_US.UTF-8") == 0)
+				STRCPY(p_jp_init, "TTT");
+#  endif
+		}
+# endif
+		p_jp = p_jp_init;
+	}
+	if (JP_SYS == JP_SJIS)
+		p_jkc = FALSE;
+#endif
 	if ((p = vimgetenv((char_u *)"SHELL")) != NULL
 #ifdef MSDOS
 			|| (p = vimgetenv((char_u *)"COMSPEC")) != NULL
@@ -312,11 +476,79 @@ set_init()
  * set the options in curwin and curbuf that are non-zero
  */
 	curwin->w_p_wrap = TRUE;
+#ifdef notdef
 	curbuf->b_p_ml = TRUE;
+#else
+	curbuf->b_p_ml = FALSE;
+#endif
+#if defined(KANJI) && defined(NT) && defined(SYNTAX)
+	curwin->w_p_syt = TRUE;
+#endif
 	curbuf->b_p_sw = 8;
 	curbuf->b_p_ts = 8;
 #ifdef MSDOS
 	curbuf->b_p_tx = TRUE;		/* texmode is default for MSDOS */
+#endif
+#ifdef KANJI
+	{
+		char_u	buf[2];
+		buf[0] = JP_FILE;
+		buf[1] = '\0';
+		curbuf->b_p_jc = strsave(buf);
+# ifdef UCODE
+		{
+			short_u		w = 0xfeff;		/* BOM */
+
+			memmove((char *)buf, &w, 2);
+			if (buf[0] == 0xfe && buf[1] == 0xff)
+				curbuf->b_p_ubig = TRUE;
+			else
+				curbuf->b_p_ubig = FALSE;
+		}
+# endif
+	}
+#endif
+#ifdef FEPCTRL
+# ifdef NT
+	if (GuiWin && fep_init())
+	{
+		FepInit = TRUE;
+		curbuf->b_p_fc = TRUE;
+	}
+	else
+# endif
+	curbuf->b_p_fc = FALSE;
+	curbuf->fepmode= FALSE;
+	curbuf->b_p_ji = strsave("a");
+	curbuf->knj_asc= 0;
+#endif
+#ifdef TRACK
+	curbuf->b_p_trs = strsave("as");
+	curbuf->b_p_tt = FALSE;
+#endif
+#ifdef USE_OPT
+	curbuf->b_p_opt = 0;
+#endif
+#if defined(NT) && defined(USE_EXFILE) && defined(USE_MATOME)
+	curbuf->b_p_ec = strsave("");
+#endif
+#if defined(KANJI) && defined(NT) && defined(SYNTAX)
+	curbuf->b_syn_ptr		= NULL;
+	curbuf->b_syn_tag		= NULL;
+	curbuf->b_syn_match		= NULL;
+	curbuf->b_syn_matchend	= NULL;
+	curbuf->b_syn_curp		= NULL;
+	curbuf->b_syn_line		= -1;
+	curbuf->b_syn_nline		= 0;
+	curbuf->b_syn_link		= NULL;
+#endif
+#ifdef NT
+	{
+		char p_win_init[32];
+		sprintf(p_win_init, "%d,%d", Columns, Rows);
+		if (p_win == NULL)
+			p_win = strsave(p_win_init);
+	}
 #endif
 
 	/*
@@ -324,7 +556,7 @@ set_init()
 	 */
 	for (i = 0; params[i].fullname != NULL; i++)
 		param_expand(i, FALSE);
-	
+
 	/*
 	 * may adjust p_mmt and p_mm for available memory
 	 */
@@ -367,6 +599,9 @@ doset(arg)
 	static int	save_ri = 0;
 	int			did_show = FALSE;	/* already showed one value */
 	WIN			*wp;
+#ifdef NT
+	long		oldColumns = Columns;
+#endif
 
 	if (*arg == NUL)
 	{
@@ -423,7 +658,7 @@ doset(arg)
 		 * allow '=' and ':' as MSDOS command.com allows only one
 		 * '=' character per "set" command line. grrr. (jw)
 		 */
-		if (nextchar == '?' || 
+		if (nextchar == '?' ||
 			(prefix == 1 && nextchar != '=' &&
 			 nextchar != ':' && !(flags & P_BOOL)))
 		{										/* print value */
@@ -540,6 +775,7 @@ doset(arg)
 						for (buf = firstbuf; buf != NULL; buf = buf->b_next)
 						{
 							buf->b_p_tw = buf->b_p_tw_save;
+							buf->b_p_wm = buf->b_p_wm_save;
 							buf->b_p_ai = buf->b_p_ai_save;
 							buf->b_p_si = buf->b_p_si_save;
 						}
@@ -557,6 +793,19 @@ doset(arg)
 					else						/* Reset window title NOW */
 						mch_restore_title((int *)varp == &p_title ? 1 : 2);
 				}
+#ifdef FEPCTRL
+				if ((varp == (char_u *)&curbuf->b_p_fc)
+							&& (*(int *)(varp) && !FepInit))
+				{
+					if (fep_init())
+					{
+						FepInit = TRUE;
+						mch_get_winsize();
+					}
+					else
+						*(int *)(varp) = 0;
+				}
+#endif
 			}
 			else								/* numeric or string */
 			{
@@ -567,6 +816,28 @@ doset(arg)
 				}
 				if (flags & P_NUM)				/* numeric */
 				{
+#ifdef USE_OPT
+					if ((varp == (char_u *)&p_opt)
+								|| (varp == (char_u *)&curbuf->b_p_opt))
+					{
+						char_u	*	p = arg + len + 1;
+						long		val = *(long *)(varp);
+
+						switch (*p) {
+						case '+':
+							val |= atol(++p);
+							break;
+						case '-':
+							val &= ~atol(++p);
+							break;
+						default:
+							val = atol(p);
+							break;
+						}
+						*(long *)(varp) = val;
+					}
+					else
+#endif
 					*(long *)(varp) = atol((char *)arg + len + 1);
 
 					if ((long *)varp == &p_wh)
@@ -619,6 +890,210 @@ doset(arg)
 							updateScreen(CLEAR);
 						}
 					}
+#ifdef KANJI
+					/* kanji file code */
+					else if (varp == (char_u *)&curbuf->b_p_jc)
+					{
+						char_u	**	p	= (char_u **)varp;
+
+						if (STRLEN(*p) != 1)
+						{
+							emsg("single letter");
+							s = alloc(2);
+							if (s == NULL)
+								break;
+							free(*(char **)(varp));
+							s[0] = JP_FILE;
+							s[1] = NUL;
+							*(char_u **)(varp) = s;
+							p = (char_u **)varp;
+						}
+						if (**p == 'n' || **p == 'N') /* old version convert */
+							**p = 'J' + **p - 'N';
+						if (!STRCHR(JP_FSTR, **p))
+						{
+							emsg(JP_FSTR);
+							**p = JP_FILE;
+						}
+					}
+					else if (params[i].var == (char_u *)&p_jp)
+					{
+						char_u	*	cp;
+
+						if (STRLEN(p_jp) != 3)
+						{
+							emsg("key, display, and system");
+							s = alloc(STRLEN(JP_DEF) + 1);
+							if (s == NULL)
+								break;
+							free(*(char **)(varp));
+							STRCPY(s, JP_DEF);
+							p_jp = s;
+						}
+						for (cp = p_jp; *cp; cp++)
+						{
+							if ('a' <= *cp && *cp <= 'z')
+								*cp -= 'a' - 'A';
+							if (*cp == 'N')		/* old version convert */
+								*cp = JP_JIS;
+							if (!STRCHR(JP_STR, *cp))
+							{
+								emsg(JP_STR);
+								STRCPY(p_jp, JP_DEF);
+								break;
+							}
+						}
+					}
+#endif
+#ifdef FEPCTRL
+					else if (varp == (char_u *)&curbuf->b_p_ji)
+					{
+						char_u	**	p	= (char_u **)varp;
+
+						if (STRLEN(*p) != 1)
+						{
+							emsg("single letter");
+							s = alloc(2);
+							if (s == NULL)
+								break;
+							free(*(char **)(varp));
+							s[0] = 'a';
+							s[1] = NUL;
+							*(char_u **)(varp) = s;
+							p = (char_u **)varp;
+						}
+						if (!STRCHR("jJaA", **p))
+						{
+							emsg("jinsert \"jJaA\"");
+							**p = 'a';
+						}
+					}
+					else if (varp == (char_u *)&p_fk)
+					{
+						char_u	*	cp	= p_fk;
+
+						while (*cp)
+						{
+							if (*cp < '@' || '_' < *cp)
+							{
+								emsg("fepkey '@' - '_'");
+								STRCPY(p_fk, "\\");
+								break;
+							}
+							cp++;
+						}
+					}
+#endif
+#ifdef NT
+					else if (params[i].var == (char_u *)&p_win)
+					{
+						char_u	*	cp;
+						char_u		buf[32];
+						long		row = 0;
+						long		col = 0;
+						int			i;
+
+						if (NoResize && lastwin != firstwin)
+							break;
+						for (;;)
+						{
+							buf[0] = NUL;
+							for (i = 0, cp = p_win; *cp; cp++, i++)
+							{
+								if (*cp == ':' || *cp == ',')
+								{
+									cp++;
+									break;
+								}
+								else if (isdigit(*cp))
+									buf[i] = *cp;
+								else
+									goto error;
+							}
+							buf[i] = NUL;
+							if (buf[0] != NUL)
+								col = atol(buf);
+							buf[0] = NUL;
+							for (i = 0; *cp; cp++, i++)
+							{
+								if (isdigit(*cp))
+									buf[i] = *cp;
+								else
+									goto error;
+							}
+							buf[i] = NUL;
+							if (buf[0] != NUL)
+								row = atol(buf);
+							if (col != 0 && row != 0)
+							{
+								set_winsize((int)col, (int)row, TRUE);
+								break;	/* for loop */
+							}
+error:
+							emsg("window=[0-9]*,[0-9]*");
+							break;
+						}
+						sprintf(buf, "%d,%d", Columns, Rows);
+						s = strsave(buf);
+						if (s == NULL)
+							break;
+						free(*(char **)(varp));
+						*(char_u **)(varp) = s;
+					}
+#endif
+#if defined(NT) && defined(USE_EXFILE) && defined(USE_MATOME)
+					/* kanji file code */
+					else if (varp == (char_u *)&curbuf->b_p_ec)
+					{
+						char_u	**	p	= (char_u **)varp;
+
+						if (STRLEN(*p) > 1)
+						{
+							emsg("Base64/Uuencode");
+							s = alloc(2);
+							if (s == NULL)
+								break;
+							free(*(char **)(varp));
+							s[0] = 'b';
+							s[1] = NUL;
+							*(char_u **)(varp) = s;
+							p = (char_u **)varp;
+						}
+						if ('A' <= **p && **p <= 'Z')
+							**p += 'a' - 'A';
+						if (!STRCHR("bu", **p))
+						{
+							emsg("Base64/Uuencode");
+							**p = 'b';
+						}
+					}
+					else if (params[i].var == (char_u *)&p_dc)
+					{
+						char_u	*	cp;
+
+						if (STRLEN(p_dc) > 2)
+						{
+							emsg("Base64/Uuencode/Quoted-printable/Auto and read");
+							s = alloc(2);
+							if (s == NULL)
+								break;
+							free(*(char **)(varp));
+							STRCPY(s, "a");
+							p_dc = s;
+						}
+						for (cp = p_dc; *cp; cp++)
+						{
+							if ('A' <= *cp && *cp <= 'Z')
+								*cp += 'a' - 'A';
+							if (!STRCHR("abuqr+*glczm", *cp))
+							{
+								emsg("Base64/Uuencode/Quoted-printable/Auto and read");
+								STRCPY(p_dc, "a");
+								break;
+							}
+						}
+					}
+#endif
 				}
 			}
 			params[i].flags |= P_CHANGED;
@@ -644,6 +1119,22 @@ skip:
 			set_window();		/* active window may have changed */
 #endif
 		}
+#ifdef NT
+		if (oldRows != Rows || oldColumns != Columns)
+		{
+			char_u		buf[32];
+			char_u	*	s;
+
+			set_winsize((int)Columns, (int)Rows, TRUE);
+			sprintf(buf, "%d,%d", Columns, Rows);
+			s = strsave(buf);
+			if (s != NULL)
+			{
+				free(p_win);
+				p_win = s;
+			}
+		}
+#endif
 
 		if (curbuf->b_p_ts <= 0)
 		{
@@ -764,6 +1255,23 @@ param_expand(i, dofree)
 			*(char_u **)(params[i].var) = p;
 		}
 	}
+#if !defined(notdef) && (defined(UNIX) || defined(NT))
+	if ((params[i].flags & P_EXPAND) &&
+				(p = *(char_u **)(params[i].var)) != NULL &&
+				(p == (char_u *)p_bdir || p == (char_u *)p_dir) &&
+				*p == '>' && (p[1] == '$' || p[1] == '~'))
+	{
+		expand_env(&(*(char_u **)(params[i].var))[1], &IObuff[1], IOSIZE - 1);
+		IObuff[0] = '>';
+		p = strsave(IObuff);
+		if (p)
+		{
+			if (dofree)
+				free(*(char_u **)(params[i].var));
+			*(char_u **)(params[i].var) = p;
+		}
+	}
+#endif
 }
 
 /*
@@ -929,6 +1437,22 @@ showonep(p)
 				home_replace(*(char_u **)(varp), NameBuff, MAXPATHL);
 				msg_outtrans(NameBuff, -1);
 			}
+#ifdef NT
+			else if (varp == (char_u *)&p_win)
+			{
+				char_u		buf[32];
+				char_u	*	s;
+
+				sprintf(buf, "%d,%d", Columns, Rows);
+				s = strsave(buf);
+				if (s != NULL)
+				{
+					free(p_win);
+					p_win = s;
+				}
+				msg_outtrans(*(char_u **)(varp), -1);
+			}
+#endif
 			else
 				msg_outtrans(*(char_u **)(varp), -1);
 		}
@@ -1073,6 +1597,32 @@ get_varp(p)
 		case PV_TW:		return (char_u *)&(curbuf->b_p_tw);
 		case PV_TX:		return (char_u *)&(curbuf->b_p_tx);
 		case PV_WM:		return (char_u *)&(curbuf->b_p_wm);
+#ifdef KANJI
+		case PV_JC:		return (char_u *)&(curbuf->b_p_jc);
+# ifdef UCODE
+		case PV_UB:		return (char_u *)&(curbuf->b_p_ubig);
+# endif
+#endif
+#ifdef FEPCTRL
+		case PV_FC:		return (char_u *)&(curbuf->b_p_fc);
+		case PV_JI:		return (char_u *)&(curbuf->b_p_ji);
+#endif
+#ifdef CRMARK
+		case PV_CR:		return (char_u *)&(curwin->w_p_cr);
+#endif
+#ifdef TRACK
+		case PV_TRS:	return (char_u *)&(curbuf->b_p_trs);
+		case PV_TT:		return (char_u *)&(curbuf->b_p_tt);
+#endif
+#ifdef USE_OPT
+		case PV_OPT:	return (char_u *)&(curbuf->b_p_opt);
+#endif
+#if defined(NT) && defined(USE_EXFILE) && defined(USE_MATOME)
+		case PV_EC:		return (char_u *)&(curbuf->b_p_ec);
+#endif
+#if defined(KANJI) && defined(NT) && defined(SYNTAX)
+		case PV_SYT:	return (char_u *)&(curwin->w_p_syt);
+#endif
 		default:		EMSG("get_varp ERROR");
 	}
 	/* always return a valid pointer to avoid a crash! */
@@ -1092,6 +1642,12 @@ win_copy_options(wp_from, wp_to)
 	wp_to->w_p_nu = wp_from->w_p_nu;
 	wp_to->w_p_scroll = wp_from->w_p_scroll;
 	wp_to->w_p_wrap = wp_from->w_p_wrap;
+#ifdef CRMARK
+	wp_to->w_p_cr = wp_from->w_p_cr;
+#endif
+#if defined(KANJI) && defined(NT) && defined(SYNTAX)
+	wp_to->w_p_syt = wp_from->w_p_syt;
+#endif
 }
 
 /*
@@ -1115,6 +1671,28 @@ buf_copy_options(bp_from, bp_to)
 	bp_to->b_p_ml = bp_from->b_p_ml;
 	bp_to->b_p_sn = bp_from->b_p_sn;
 	bp_to->b_p_tx = bp_from->b_p_tx;
+#ifdef KANJI
+	bp_to->b_p_jc = strsave(bp_from->b_p_jc);
+# ifdef UCODE
+	bp_to->b_p_ubig = bp_from->b_p_ubig;
+# endif
+#endif
+#ifdef FEPCTRL
+	bp_to->b_p_fc = bp_from->b_p_fc;
+	bp_to->fepmode= FALSE;
+	bp_to->b_p_ji = strsave(bp_from->b_p_ji);
+	bp_to->knj_asc= 0;
+#endif
+#ifdef TRACK
+	bp_to->b_p_trs = strsave(bp_from->b_p_trs);
+	bp_to->b_p_tt = bp_from->b_p_tt;
+#endif
+#ifdef USE_OPT
+	bp_to->b_p_opt = bp_from->b_p_opt;
+#endif
+#if defined(NT) && defined(USE_EXFILE) && defined(USE_MATOME)
+	bp_to->b_p_ec = strsave("");
+#endif
 }
 
 #ifdef WEBB_COMPLETE
@@ -1195,7 +1773,7 @@ set_context_in_set_cmd(arg)
 	{
 		p = params[i].var;
 		if (
-#ifdef UNIX
+#if defined(UNIX) || (defined(NT) && !defined(notdef))
 			p == (char_u *)&p_bdir ||
 #endif
 			p == (char_u *)&p_dir || p == (char_u *)&p_path)

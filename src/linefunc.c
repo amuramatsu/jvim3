@@ -14,6 +14,9 @@
 #include "vim.h"
 #include "globals.h"
 #include "proto.h"
+#ifdef KANJI
+#include "kanji.h"
+#endif
 
 /*
  * coladvance(col)
@@ -38,6 +41,15 @@ coladvance(wcol)
 	{
 		++index;
 		/* Count a tab for what it's worth (if list mode not on) */
+#ifdef KANJI
+		if (ISkanji(*ptr))
+		{
+			col += 2;
+			++ptr;
+			++index;
+		}
+		else
+#endif
 		col += chartabsize(*ptr, (long)col);
 		++ptr;
 	}
@@ -50,6 +62,10 @@ coladvance(wcol)
 		curwin->w_cursor.col = 0;
 	else
 		curwin->w_cursor.col = index;
+#ifdef KANJI
+	if (ISkanjiCur() == 2 && curwin->w_cursor.col != 0)
+		curwin->w_cursor.col--;
+#endif
 }
 
 /*
@@ -72,7 +88,19 @@ inc(lp)
 
 	if (*p != NUL)
 	{			/* still within line */
+#ifdef KANJI
+		if (ISkanji(*p))
+		{
+			lp->col += 2;
+			p++;
+		}
+		else
+		{
+			lp->col++;
+		}
+#else
 		lp->col++;
+#endif
 		return ((p[1] != NUL) ? 0 : 1);
 	}
 	if (lp->lnum != curbuf->b_ml.ml_line_count)
@@ -117,6 +145,10 @@ dec(lp)
 	if (lp->col > 0)
 	{			/* still within line */
 		lp->col--;
+#ifdef KANJI
+		if (ISkanjiFpos(lp) == 2 && lp->col > 0)
+			lp->col--;
+#endif
 		return 0;
 	}
 	if (lp->lnum > 1)
@@ -158,6 +190,11 @@ adjust_cursor()
 	len = STRLEN(ml_get(curwin->w_cursor.lnum));
 	if (len == 0)
 		curwin->w_cursor.col = 0;
-	else if (curwin->w_cursor.col >= len)
+	else if (curwin->w_cursor.col >= len){
 		curwin->w_cursor.col = len - 1;
+#ifdef KANJI
+		if (ISkanjiCur() == 2 && curwin->w_cursor.col > 0)
+			curwin->w_cursor.col--;
+#endif
+	}
 }

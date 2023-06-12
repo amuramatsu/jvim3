@@ -1,0 +1,108 @@
+
+Cygwinで使用時の補足
+
+
+* Cygwinのバージョン
+
+B20.1以降での動作を確認していますが、2000/04/21現在Cygwin 1.1がリリース
+されているので、そちらを使った方がいいでしょう。
+# ftp siteの「cygwin-b20」ディレクトリにある物はB20.1です
+
+
+* make方法
+
+基本的にUn*x一般のmake方法と同じで、
+	% cp makjunix.mak Makefile
+	% vi Makefile
+		# Cygwin (TESTED 1.1-NetRelease) の部分をコメントアウト
+	% make
+	% make install
+で行けるはずです。
+
+
+* termlibに関して
+
+B20.1以降標準でlibtermcap.aが付いてくるので、LIBS=-ltermcapでmakeできま
+すが、Cygwin用にportされたncursesや、jvim内蔵のtermlibを使う事もできま
+す。
+
+  * Cygwinのtermcapを使う場合(これをデフォルトにしてあります)
+	LIBS=-ltermcap
+
+  * ncursesを使う場合(入手先は後述のURLを参照)
+  	LIBS=-lncurses
+
+  * jvim内蔵のtermlibを使用する場合
+	TERMLIB=termlib.o
+	LIBS=
+
+
+* 妙なエラーが出てコンパイルできない場合
+
+Cygwinでこの手のエラーが出る場合は、大抵ファイルの改行コードが原因で
+す。例えば、makefileがCRLFになっていると(makeはCRLFを理解してくれない
+ので)意味不明のエラーメッセージを出してコケます。
+
+Cygwinにはtext modeとbinary modeがあり、text modeではCygwin内部で
+LF <-> CRLF変換が行われる(アプリケーションにはCRLFが渡る)為、それを考慮
+していないアプリケーションは誤動作します。
+
+Cygwinにportされたバイナリは、CRLFでも動作するようにパッチが当たってい
+る事がありますが、そうでない物も結構存在するので、悩みたくないなら以下
+のどれかでbinary modeを使うようにすると良いでしょう。
+
+  1. CRLFだと困るディレクトリ(に限らず全てでも良いが)はmount -bでbinary
+     mountする。
+  2. 環境変数CYGWIN=binmodeを設定してからCygwinを起動する。
+
+# 過去に私がやったケースでは、コンパイルする作業ディレクトリが運悪く
+# text modeでmountされていた為、patch -p1 < jvim.diff した時にpatchの
+# 当たったファイルがCRLF変換され、makeでエラー。何故? というのがありま
+# した。
+
+
+* その他
+
+o telnet/Xから使用時にウィンドウサイズを変更すると、
+	Vim: Error reading input, exiting...
+  と言って終了してしまう事があるので、1.3j以降その部分に手を入れていま
+  す(unix.c)。ちょっと変な動き(何回も再描画する)をしますが、いきなり死
+  ぬよりはましでしょう(^^;
+
+o jvim 2.0aまででは、Cygwinのlibtermcap.aを使ってmakeしたバイナリを
+  CYGWIN=ttyで動かすとアクセス違反で落ちていました。これはCygwinの
+  libtermcap.aが、vim.hで定義されているTBUFSZ(1024バイト)を超えるエン
+  トリを戻して、バッファオーバーフローが起こっていた為です。
+
+
+o 関連URL
+
+  The Cygwin Project
+  http://sourceware.cygnus.com/cygwin/
+	Cygwinの総本山です。
+
+  Ring server
+  ftp://ftp.ring.gr.jp/archives/pc/gnu-win32/latest/
+	国内のmirrorの1つです。ring serverは各所にあるので、自分の所か
+	ら近いサーバーを選ぶと良いでしょう。
+
+  Cygwin情報
+  http://www.jaist.ac.jp/~fujieda/cygwin/
+	JAISTの藤枝さんによる最新情報追っかけサイトです:-)
+
+  Cygwin Nightly Snapshots
+  http://sourceware.cygnus.com/cygwin/snapshots/
+	cygwin1.dll等の「夜ごとの最新snapshot」があります。Cygwin 1.1
+	以降のbugfix版が欲しい時はこれを試してみるといいでしょう。ただ
+	しここにある物は開発の最前線の物なので、新たなバグが入っている
+	事もあります。
+
+  CygUtils
+  http://cygutils.netpedia.net/
+	Cygwinにportされたユーティリティのバイナリ/パッチがまとめられ
+	ています。ncurses、perl、autoconf、automake、inetutilsなどは
+	ここからdownloadすると良いでしょう。
+
+
+2000/04/22
+樋口 泰志 (yzone@mail.raidway.ne.jp)

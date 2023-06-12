@@ -14,6 +14,9 @@
 #include "proto.h"
 #include "param.h"
 #include "ops.h"		/* for mincl */
+#ifdef KANJI
+#include "kanji.h"
+#endif
 
 /* modified Henry Spencer's regular expression routines */
 #include "regexp.h"
@@ -58,6 +61,407 @@ static char_u 	*last_pattern = NULL;
 
 static int		want_start;				/* looking for start of line? */
 
+#ifdef USE_GREP
+typedef struct grep {
+	int					left;			/* or search						*/
+	int					next;			/* and search						*/
+	int					not;			/* not search						*/
+	regexp			*	prog;			/* regexec parameter				*/
+	char_u			*	str;			/* original string pointer			*/
+} GREP;
+static GREP				g_dmy;
+static GREP			*	gpattern = &g_dmy;
+static int				g_max	= 0;
+static int				p_grep	= 0;
+static int				p_wn	= FALSE;
+static int				p_join	= FALSE;
+static int				p_icase	= FALSE;
+static int				p_jicase= FALSE;
+
+static char_u * skip_grepregexp __ARGS((char_u *, int));
+static int grepsub __ARGS((GREP *, char_u *, int, linenr_t, int *, char_u **, char_u **));
+static int grepexec __ARGS((regexp *, char_u *, int, linenr_t));
+static int do_wrapnext __ARGS((int));
+
+static char_u *
+skip_grepregexp(orgstr, dirc)
+char_u		*	orgstr;
+int				dirc;
+{
+	regexp	*	prog;
+	char_u		pattern[CMDBUFFSIZE];
+	char_u	*	p;
+	char_u	*	str;
+	int			no;
+	int			not;
+	int			and;
+	char_u	*	firstp = NULL;
+
+	for (no = 0; no < g_max; no++)
+	{
+		if (gpattern[no].prog)
+			free(gpattern[no].prog);
+		memset((char *)&gpattern[no], 0, sizeof(GREP));
+	}
+	p_grep	= 0;
+	p_wn	= FALSE;
+	p_join	= FALSE;
+	p_icase	= FALSE;
+	p_jicase= FALSE;
+	firstp	= skip_regexp(orgstr, dirc);
+	strcpy(pattern, orgstr);
+	str		= pattern;
+	no		= 0;
+	not		= FALSE;
+	and		= FALSE;
+	for (;;)
+	{
+		p = skip_regexp(str, dirc);
+		if (*p == dirc && p[1] != NUL)
+		{
+			*p++ = NUL;
+			if ((prog = regcomp(str)) == NULL)
+				goto error;
+			else
+			{
+				if (no >= g_max)
+				{
+					GREP	*	p;
+
+					if ((p = (GREP *)malloc(sizeof(GREP) * (g_max + 1))) == NULL)
+						goto error;
+					memset((char *)p, 0, sizeof(GREP) * (g_max + 1));
+					memcpy(p, gpattern, sizeof(GREP) * g_max);
+					g_max++;
+					if (gpattern != &g_dmy)
+						free(gpattern);
+					gpattern = p;
+				}
+				gpattern[no].not = not;
+				gpattern[no].prog= prog;
+				gpattern[no].str = str;
+				if (no != 0)
+				{
+					if (and)
+						gpattern[no - 1].next = no;
+					else
+						gpattern[no - 1].left = no;
+				}
+				no++;
+				not = FALSE;
+				and = FALSE;
+			}
+			if (strncmp(p, "&&",  2) == 0 && p[2] == dirc)
+			{
+				and = TRUE;
+				p  += 3;
+			}
+			else if (strncmp(p, "&&~", 3) == 0 && p[3] == dirc)
+			{
+				and = TRUE;
+				not = TRUE;
+				p  += 4;
+			}
+			else if (strncmp(p, "||",  2) == 0 && p[2] == dirc)
+				p  += 3;
+			else if (strncmp(p, "||~", 3) == 0 && p[3] == dirc)
+			{
+				not = TRUE;
+				p  += 4;
+			}
+			else if (strchr("jlLwWiIcC", *p) != NULL)
+			{
+				while (*p)
+				{
+					if (*p == 'W')
+					{
+						p++;
+						p_wn = TRUE;
+						if (p_grep == 0)
+							p_grep = 1;
+					}
+					else if (*p == 'w')
+					{
+						char_u	*	w;
+						int			i;
+
+						p++;
+						for (i = 0; i < no; i++)
+						{
+							if ((w = malloc(strlen(gpattern[i].str) + 5)) == NULL)
+								goto error;
+							strcpy(w, "\\<");
+							strcat(w, gpattern[i].str);
+							strcat(w, "\\>");
+							if ((prog = regcomp(w)) == NULL)
+							{
+								free(w);
+								goto error;
+							}
+							free(gpattern[i].prog);
+							gpattern[i].prog= prog;
+							free(w);
+						}
+						if (p_grep == 0)
+							p_grep = 1;
+					}
+					else if (*p == 'J')
+					{
+						p++;
+						p_join = TRUE;
+						if (p_grep <= 1)
+							p_grep = 2;
+					}
+					else if (*p == 'l' || *p == 'L')
+					{
+						p++;
+						if (isdigit(*p))
+							p_grep = atol((char *)p);
+						else						/* single */
+							p_grep = 1;
+						while (isdigit(*p))			/* skip number */
+							++p;
+					}
+					else if (*p == 'i' || *p == 'I')
+					{
+						p++;
+						p_icase = TRUE;
+						if (p_grep == 0)
+							p_grep = 1;
+					}
+					else if (*p == 'j' || *p == 'C')
+					{
+						p++;
+						p_jicase = TRUE;
+						if (p_grep == 0)
+							p_grep = 1;
+					}
+					else if (*p == dirc)
+					{
+						p++;
+						break;
+					}
+					else
+						break;
+				}
+				firstp = orgstr + (p - pattern);
+				break;
+			}
+			else
+				break;
+			str = p;
+		}
+		else
+			break;
+	}
+	return(firstp);
+error:
+	if (gpattern[0].prog != NULL)
+		free(gpattern[0].prog);
+	gpattern[0].prog = NULL;
+	return(firstp);
+}
+
+static int
+grepsub(gp, string, at_bol, lnum, look, match, matchend)
+register GREP *gp;
+register char_u  *string;
+int 			at_bol;
+linenr_t		lnum;
+int			*	look;
+char_u		**	match;
+char_u		**	matchend;
+{
+	linenr_t		i;
+	int				found = FALSE;
+
+	if (p_join)
+	{
+		long				n = 0;
+		char_u			*	p;
+		char_u			*	cp;
+		char_u			*	ep;
+		int					kanji = FALSE;
+
+		for (i = 0; i < p_grep; i++)
+		{
+			if (lnum + i > curbuf->b_ml.ml_line_count)
+				break;
+			n += strlen(i == 0 ? string : ml_get(lnum + i));
+		}
+		if ((p = malloc(n + p_grep + 1)) == NULL)
+			return(FALSE);
+		p[0] = '\0';
+		for (i = 0; i < p_grep; i++)
+		{
+			if (lnum + i > curbuf->b_ml.ml_line_count)
+				break;
+			cp = (i == 0) ? string : ml_get(lnum + i);
+			while (i != 0 && *cp)
+			{
+				if (*cp == ' ' || *cp == '\t')
+					cp++;
+				else if (ISkanji(*cp))
+				{
+					if (isjpspace(cp[0], cp[1]))
+						cp += 2;
+					else
+						break;
+				}
+				else
+					break;
+			}
+			if (i != 0)
+			{
+				if (ISkanji(*cp) && kanji)
+					;
+				else
+					strcat(p, " ");
+			}
+			ep = p + strlen(p);
+			strcat(p, cp);
+			cp = ep;
+			ep = NULL;
+			while (*cp)
+			{
+				if (*cp == ' ' || *cp == '\t')
+				{
+					if (ep == NULL)
+						ep = cp;
+				}
+				else if (ISkanji(*cp) && isjpspace(cp[0], cp[1]))
+				{
+					if (ep == NULL)
+						ep = cp;
+					cp++;
+				}
+				else
+				{
+					ep = NULL;
+					if (ISkanji(*cp))
+					{
+						kanji = TRUE;
+						cp++;
+					}
+					else
+						kanji = FALSE;
+				}
+				cp++;
+			}
+			if (ep != NULL)
+				*ep = '\0';
+		}
+		if (regexec(gp->prog, p, at_bol))
+		{
+			if (gp->prog->startp[0] < (p + strlen(string)))
+			{
+				*look = TRUE;
+				if (*match == NULL
+							|| *match > (string + (gp->prog->startp[0] - p)))
+				{
+					*match = string + (gp->prog->startp[0] - p);
+					if ((gp->prog->endp[0] - p) > strlen(string))
+						*matchend = string + strlen(string);
+					else
+						*matchend = string + (gp->prog->endp[0] - p);
+				}
+			}
+			found = TRUE;
+		}
+		free(p);
+	}
+	else
+	{
+		for (i = 0; i < p_grep; i++)
+		{
+			if (lnum + i > curbuf->b_ml.ml_line_count)
+				break;
+			if (regexec(gp->prog, i == 0 ? string : ml_get(lnum + i), at_bol))
+			{
+				if (i == 0)
+				{
+					*look = TRUE;
+					if (*match == NULL || *match > gp->prog->startp[0])
+					{
+						*match = gp->prog->startp[0];
+						*matchend = gp->prog->endp[0];
+					}
+				}
+				found = TRUE;
+				break;
+			}
+		}
+	}
+	if (gp->not && !found)
+		found = TRUE;
+	else if (gp->not && found)
+		found = FALSE;
+	if (!found && gp->left)
+		found = grepsub(&gpattern[gp->left], string, at_bol, lnum, look, match, matchend);
+	if (found && gp->next)
+		return(grepsub(&gpattern[gp->next], string, at_bol, lnum, look, match, matchend));
+	if (found && gp->next == 0)
+		return(TRUE);
+	return(FALSE);
+}
+
+static int
+grepexec(prog, string, at_bol, lnum)
+register regexp *prog;
+register char_u  *string;
+int 			at_bol;
+linenr_t		lnum;
+{
+	int				look = FALSE;
+	char_u		*	match		= NULL;
+	char_u		*	matchend	= NULL;
+
+	if (p_grep == 0)
+		return(regexec(prog, string, at_bol));
+	if (grepsub(&gpattern[0], string, at_bol, lnum, &look, &match, &matchend))
+	{
+		prog->startp[0] = match;
+		prog->endp[0] = matchend;
+		return(look);
+	}
+	return(FALSE);
+}
+
+static int
+do_wrapnext(dir)
+int			dir;
+{
+	int			other = TRUE;
+	int			more = p_more;
+	int			i;
+
+	if (!p_wn)
+		return(FAIL);
+	if (got_int)
+		return(FAIL);
+	i = curwin->w_arg_idx + dir;
+	if (i < 0 || i >= arg_count)
+		return(FAIL);
+	if (p_hid)
+		other = otherfile(fix_fname(arg_files[i]));
+	if ((!p_hid || !other)
+			&& (curbuf->b_changed && (!other || curbuf->b_nwindows <= 1)
+										&& (autowrite(curbuf) == FAIL)))
+		return(FAIL);
+	curwin->w_arg_idx = i;
+	p_more = FALSE;
+	++no_wait_return;
+	(void)doecmd(arg_files[curwin->w_arg_idx], NULL, NULL, p_hid, (linenr_t)1);
+	--no_wait_return;
+	p_more = more;
+	breakcheck();
+	if (got_int)
+		return(FAIL);
+	flushbuf();
+	return(OK);
+}
+#endif
+
 /*
  * translate search pattern for regcomp()
  *
@@ -67,7 +471,7 @@ static int		want_start;				/* looking for start of line? */
  * which_pat == 0: use previous search pattern if "pat" is NULL
  * which_pat == 1: use previous sustitute pattern if "pat" is NULL
  * which_pat == 2: use last used pattern if "pat" is NULL
- * 
+ *
  */
 	regexp *
 myregcomp(pat, sub_cmd, which_pat)
@@ -138,6 +542,21 @@ myregcomp(pat, sub_cmd, which_pat)
 
 	want_start = (*pat == '^');		/* looking for start of line? */
 	reg_ic = p_ic;					/* tell the regexec routine how to search */
+#ifdef KANJI
+	reg_jic = p_jic;				/* tell the regexec routine how to search */
+#endif
+#ifdef USE_GREP
+	reg_ic = reg_ic ? reg_ic : p_icase;
+# ifdef KANJI
+	reg_jic = reg_jic ? reg_jic : p_jicase;
+# endif
+	if (p_grep && sub_cmd == 0 && which_pat == 2 && gpattern[0].prog != NULL)
+	{
+		if ((retval = malloc(sizeof(regexp))) != NULL)
+			memcpy(retval, gpattern[0].prog, sizeof(regexp));
+	}
+	else
+#endif
 	retval = regcomp(pat);
 	return retval;
 }
@@ -166,6 +585,10 @@ searchit(pos, dir, str, count, end, message)
 	register int		i;
 	register char_u		*match, *matchend;
 	int 				loop;
+#ifdef USE_GREP
+	int					wscan = p_ws;
+	long				fcount= count;
+#endif
 
 	if ((prog = myregcomp(str, 0, 2)) == NULL)
 	{
@@ -176,17 +599,39 @@ searchit(pos, dir, str, count, end, message)
 /*
  * find the string
  */
+#ifdef USE_GREP
+	if (p_wn)
+		p_ws = FALSE;
+retry:
+#endif
 	found = 1;
 	while (count-- && found)    /* stop after count matches, or no more matches */
 	{
 		startlnum = pos->lnum;	/* remember start of search for detecting no match */
 		found = 0;				/* default: not found */
 
+#ifdef KANJI
+		i = pos->col;
+		lnum = pos->lnum;
+		if (dir == FORWARD)
+		{
+			i += ISkanjiCol(lnum, i) == 1 ? 2 : 1;
+		}
+		else /* dir == BACKWARD */
+		{
+			i --;
+			if (i < 0)
+				-- lnum;
+			else if (ISkanjiCol(lnum, i) == 2)
+				i --;
+		}
+#else
 		i = pos->col + dir; 	/* search starts one postition away */
 		lnum = pos->lnum;
 
 		if (dir == BACKWARD && i < 0)
 			--lnum;
+#endif
 
 		for (loop = 0; loop != 2; ++loop)   /* do this twice if 'wrapscan' is set */
 		{
@@ -200,7 +645,11 @@ searchit(pos, dir, str, count, end, message)
 					s += i;
 				}
 
+#ifdef USE_GREP
+				if (grepexec(prog, s, dir == BACKWARD || i <= 0, lnum))
+#else
 				if (regexec(prog, s, dir == BACKWARD || i <= 0))
+#endif
 				{							/* match somewhere on line */
 					match = prog->startp[0];
 					matchend = prog->endp[0];
@@ -211,7 +660,15 @@ searchit(pos, dir, str, count, end, message)
 						 * we have to get the last one. Or the last one before
 						 * the cursor, if we're on that line.
 						 */
+#ifdef KANJI
+# ifdef USE_GREP
+						while (*match && grepexec(prog, match + (ISkanji(*match) ? 2 : 1), (int)FALSE, lnum))
+# else
+						while (*match && regexec(prog, match + (ISkanji(*match) ? 2 : 1), (int)FALSE))
+# endif
+#else
 						while (*match != NUL && regexec(prog, match + 1, (int)FALSE))
+#endif
 						{
 							if ((i >= 0) && ((prog->startp[0] - s) > i))
 								break;
@@ -229,6 +686,9 @@ searchit(pos, dir, str, count, end, message)
 					else
 						pos->col = (int) (match - ptr);
 					found = 1;
+#ifdef USE_GREP
+					fcount--;
+#endif
 					break;
 				}
 				/* breakcheck is slow, do it only once in 16 lines */
@@ -251,6 +711,15 @@ searchit(pos, dir, str, count, end, message)
 			 * is redrawn. The keep_msg is cleared whenever another message is
 			 * written.
 			 */
+#ifndef notdef
+			if (msg_scrolled && !p_terse && message)
+			{
+				if (must_redraw < NOT_VALID)
+					must_redraw = NOT_VALID;
+				redraw_cmdline = TRUE;
+				msg_scrolled = 0;
+			}
+#endif
 			if (dir == BACKWARD)    /* start second loop at the other end */
 			{
 				lnum = curbuf->b_ml.ml_line_count;
@@ -273,6 +742,31 @@ searchit(pos, dir, str, count, end, message)
 		if (got_int)
 			break;
 	}
+#ifdef USE_GREP
+	if (fcount && !got_int && p_wn)
+	{
+		found = 0;
+		if (do_wrapnext(dir) == OK)
+		{
+			if (must_redraw)
+				updateScreen(must_redraw);
+			flushbuf();
+			count = fcount;
+			if (dir == BACKWARD)
+			{
+				pos->lnum = curbuf->b_ml.ml_line_count;
+				pos->col  = strlen(ml_get(pos->lnum));
+			}
+			else
+			{
+				pos->lnum = 1;
+				pos->col  = -1;
+			}
+			goto retry;
+		}
+	}
+	p_ws = wscan;
+#endif
 
 	free(prog);
 
@@ -368,7 +862,11 @@ dosearch(dirc, str, reverse, count, echo, message)
 		 * Find end of regular expression.
 		 * If there is a matching '/' or '?', toss it.
 		 */
+#ifdef USE_GREP
+		p = skip_grepregexp(str, dirc);
+#else
 		p = skip_regexp(str, dirc);
+#endif
 		if (*p == dirc)
 		{
 			dircp = p;		/* remember where we put the NUL */
@@ -515,13 +1013,21 @@ end_dosearch:
  * Repeat this 'count' times.
  */
 	int
+#ifndef KANJI
 searchc(c, dir, type, count)
+#else
+searchc(c, k, dir, type, count)
+	int				k;
+#endif
 	int 			c;
 	register int	dir;
 	int 			type;
 	long			count;
 {
 	static int	 	lastc = NUL;	/* last character searched for */
+#ifdef KANJI
+	static int		lastk = NUL;
+#endif
 	static int		lastcdir;		/* last direction of character search */
 	static int		lastctype;		/* last type of search ("find" or "to") */
 	register int	col;
@@ -531,6 +1037,9 @@ searchc(c, dir, type, count)
 	if (c != NUL)       /* normal search: remember args for repeat */
 	{
 		lastc = c;
+#ifdef KANJI
+		lastk = k;
+#endif
 		lastcdir = dir;
 		lastctype = type;
 	}
@@ -560,14 +1069,41 @@ searchc(c, dir, type, count)
 	{
 			for (;;)
 			{
+#ifdef KANJI
+				if (dir > 0 && ISkanji(p[col])) col ++;
+				col += dir;
+				if (dir < 0 && ISkanjiPosition(p, col + 1) == 2) col --;
+
+				if (col < 0 || col >= len)
+					return FALSE;
+
+				if (ISkanji(p[col]))
+				{
+					if (p[col] == lastc && p[col + 1] == lastk)
+						break;
+				}
+				else if (p[col] == lastc)
+					break;
+#else
 				if ((col += dir) < 0 || col >= len)
 					return FALSE;
 				if (p[col] == lastc)
 						break;
+#endif
 			}
 	}
 	if (lastctype)
+#ifdef KANJI
+	{
+		if (dir < 0 && ISkanji(p[col]))
+			col ++;
 		col -= dir;
+		if (dir > 0 && ISkanjiPosition(p, col + 1) == 2)
+			col --;
+    }
+#else
+		col -= dir;
+#endif
 	curwin->w_cursor.col = col;
 	return TRUE;
 }
@@ -590,29 +1126,36 @@ showmatch(initc)
 	int				c;
 	int 			count = 0;			/* cumulative number of braces */
 	int 			idx = 0;			/* init for gcc */
+#ifdef notdef
 	static char_u 	table[6] = {'(', ')', '[', ']', '{', '}'};
+#else
+	static char_u 	table[8] = {'(', ')', '[', ']', '{', '}', '<', '>'};
+#endif
 	int 			inquote = 0;		/* non-zero when inside quotes */
 	register char_u	*linep;				/* pointer to current line */
 	register char_u	*ptr;
 	int				do_quotes;			/* check for quotes in current line */
 	int				hash_dir = 0;		/* Direction searched for # things */
 	int				comment_dir = 0;	/* Direction searched for comments */
+#ifdef USE_OPT
+	int				incomment = 0;		/* non-zero when inside block comment */
+#endif
 
 	pos = curwin->w_cursor;
-	linep = ml_get(pos.lnum); 
+	linep = ml_get(pos.lnum);
 
 	/*
 	 * if initc given, look in the table for the matching character
 	 */
 	if (initc != NUL)
 	{
-		for (idx = 0; idx < 6; ++idx)
+		for (idx = 0; idx < (sizeof(table)/sizeof(char_u)); ++idx)
 			if (table[idx] == initc)
 			{
 				initc = table[idx = idx ^ 1];
 				break;
 			}
-		if (idx == 6)			/* invalid initc! */
+		if (idx == (sizeof(table)/sizeof(char_u)))			/* invalid initc! */
 			return NULL;
 	}
 	/*
@@ -662,21 +1205,28 @@ showmatch(initc)
 			/*
 			 * find the brace under or after the cursor
 			 */
-			linep = ml_get(pos.lnum); 
+			linep = ml_get(pos.lnum);
 			for (;;)
 			{
 				initc = linep[pos.col];
 				if (initc == NUL)
 					break;
 
-				for (idx = 0; idx < 6; ++idx)
+#ifdef KANJI
+				if (ISkanji(initc))
+				{
+					pos.col += 2;
+					continue;
+				}
+#endif
+				for (idx = 0; idx < (sizeof(table)/sizeof(char_u)); ++idx)
 					if (table[idx] == initc)
 						break;
-				if (idx != 6)
+				if (idx != (sizeof(table)/sizeof(char_u)))
 					break;
 				++pos.col;
 			}
-			if (idx == 6)
+			if (idx == (sizeof(table)/sizeof(char_u)))
 			{
 				if (linep[0] == '#')
 					hash_dir = 1;
@@ -776,6 +1326,41 @@ showmatch(initc)
 			}
 			else
 				--pos.col;
+#ifdef KANJI
+			if (linep[pos.col] && ISkanjiPosition(linep, pos.col + 1))
+			{
+				pos.col--;
+				continue;
+			}
+#endif
+#ifdef USE_OPT
+			if (!comment_dir && !inquote && (curbuf->b_p_opt & FOPT_C_COMMENT))
+			{
+				char_u		k = linep[pos.col];
+				char_u	*	s;
+				char_u	*	c;
+
+				linep[pos.col] = NUL;
+				s = strrchr(linep, '"');
+				c = strrchr(linep, '/');
+				linep[pos.col] = k;
+				/* line comment */
+				if (!incomment && c > s && linep != c && c[-1] == '/')
+				{
+					pos.col = &c[-1] - linep;
+					continue;
+				}
+				/* block comment */
+				if (!incomment && c > s && linep != c && c[-1] == '*')
+					incomment = -1;
+				if (incomment && c > s && c[1] == '*')
+				{
+					incomment = 0;
+					pos.col = c - linep;
+					continue;
+				}
+			}
+#endif
 		}
 		else							/* forward search */
 		{
@@ -793,6 +1378,29 @@ showmatch(initc)
 			}
 			else
 				++pos.col;
+#ifdef KANJI
+			if (ISkanjiPosition(linep, pos.col + 1))
+			{
+				pos.col++;
+				continue;
+			}
+#endif
+#ifdef USE_OPT
+			if (!comment_dir && !inquote && (curbuf->b_p_opt & FOPT_C_COMMENT))
+			{
+				/* line comment */
+				if (!incomment && linep[pos.col] == '/' && linep[pos.col + 1] == '/')
+				{
+					pos.col = STRLEN(linep);
+					continue;
+				}
+				/* block comment */
+				if (!incomment && linep[pos.col] == '/' && linep[pos.col + 1] == '*')
+					incomment = 1;
+				if (incomment && linep[pos.col] == '*' && linep[pos.col + 1] == '/')
+					incomment = 0;
+			}
+#endif
 		}
 
 		if (comment_dir)
@@ -812,6 +1420,9 @@ showmatch(initc)
 			 */
 			for (ptr = linep; *ptr; ++ptr)
 				if (*ptr == '"' && (ptr == linep || ptr[-1] != '\\') &&
+#ifdef KANJI
+					(ptr > linep ? !ISkanjiPointer(linep, &ptr[-1]) : TRUE) &&
+#endif
 							(ptr == linep || ptr[-1] != '\'' || ptr[1] != '\''))
 					++do_quotes;
 			do_quotes &= 1;			/* result is 1 with even number of quotes */
@@ -853,6 +1464,11 @@ showmatch(initc)
 		 * unless this line or the previous one ends in a '\'.
 		 * Complicated, isn't it?
 		 */
+#ifdef USE_OPT
+		if (incomment && (curbuf->b_p_opt & FOPT_C_COMMENT))
+			;
+		else
+#endif
 		switch (c = linep[pos.col])
 		{
 		case NUL:
@@ -999,7 +1615,13 @@ findsent(dir, count)
 
 		/* go back to the previous non-blank char */
 		while ((c = gchar(&pos)) == ' ' || c == '\t' ||
+#ifdef KANJI
+				(dir == BACKWARD &&
+					(STRCHR(".!?)]\"'", c) != NULL || isjsend(ml_get_pos(&pos)))
+					&& c != NUL))
+#else
 					(dir == BACKWARD && strchr(".!?)]\"'", c) != NULL && c != NUL))
+#endif
 			if (decl(&pos) == -1)
 				break;
 
@@ -1015,14 +1637,22 @@ findsent(dir, count)
 					++pos.lnum;
 				break;
 			}
+#ifdef KANJI
+			if (c == '.' || c == '!' || c == '?' || isjsend(ml_get_pos(&pos)))
+#else
 			if (c == '.' || c == '!' || c == '?')
+#endif
 			{
 				tpos = pos;
 				do
 					if ((c = inc(&tpos)) == -1)
 						break;
 				while (strchr(")}\"'", c = gchar(&tpos)) != NULL && c != NUL);
+#ifdef KANJI
+				if (ISkanji(c) || c == -1  || c == ' ' || c == '\t' || c == NUL)
+#else
 				if (c == -1  || c == ' ' || c == '\t' || c == NUL)
+#endif
 				{
 					pos = tpos;
 					if (gchar(&pos) == NUL) /* skip NUL at EOL */
@@ -1180,6 +1810,32 @@ cls()
 	register int c;
 
 	c = gchar_cursor();
+#ifdef KANJI
+	if (ISkanji(c))
+	{
+		int		ret;
+
+		if ((stype != 0) && (p_ww & 64))
+			return 1;
+		if ((stype != 0) && (p_ww & 32))
+			return JPC_HIRA;
+		if ((ret = jpcls((char_u)c, *(ml_get_cursor() + 1))) >= 0)
+		{
+			if (ret != JPC_KIGOU && stype != 0)
+				return JPC_HIRA;
+			else
+				return ret;
+		}
+	}
+	if (ISkana(c))
+	{
+		if ((stype != 0) && (p_ww & 64))
+			return 1;
+		if ((stype != 0) && (p_ww & 32))
+			return JPC_HIRA;
+		return JPC_KANA;
+	}
+#endif
 	if (c == ' ' || c == '\t' || c == NUL)
 		return 0;
 

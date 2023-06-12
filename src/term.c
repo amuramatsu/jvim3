@@ -19,16 +19,19 @@
 #include "globals.h"
 #include "param.h"
 #include "proto.h"
+#ifdef KANJI
+#include "kanji.h"
+#endif
 #ifdef TERMCAP
 # ifdef linux
 #  include <termcap.h>
 #  if 0		/* only required for old versions, it's now in termcap.h */
     typedef int (*outfuntype) (int);
 #  endif
-#  define TPUTSFUNCAST (outfuntype)
+#  define TPUTSFUNCAST
 # else
 #  define TPUTSFUNCAST
-#  ifdef AMIGA
+#  if defined(AMIGA) || defined(MSDOS)	/* DOSGEN */
 #   include "proto/termlib.pro"
 #  endif
 # endif
@@ -131,7 +134,7 @@ char		*UP, *BC, PC;		/* should be extern, but some don't have them */
 # endif
 #endif /* TERMCAP */
 
-#ifdef linux
+#if defined(linux) || (defined(MSDOS) && defined(TERMCAP))	/* DOSGEN */
 # define TGETSTR(s, p)	(char_u *)tgetstr((s), (char **)(p))
 #else
 # define TGETSTR(s, p)	(char_u *)tgetstr((s), (char *)(p))
@@ -147,6 +150,14 @@ set_term(term)
 #endif
 	int width = 0, height = 0;
 
+#ifdef NT
+	if (GuiWin)
+	{
+		term = *p;
+		builtin = 1;
+	}
+	else
+#endif
 	if (!STRNCMP(term, "builtin_", (size_t)8))
 	{
 		term += 8;
@@ -154,6 +165,17 @@ set_term(term)
 		builtin = 1;
 #endif
 	}
+#if !defined(notdef) && defined(TERMCAP)	/* debug */
+	else if (STRCMP(term, "pcbios") == 0)
+	{
+		term = *p;
+		builtin = 1;
+	}
+	else if (*p == term)
+	{
+		builtin = 1;
+	}
+#endif
 #ifdef TERMCAP
 	else
 	{
@@ -201,6 +223,12 @@ set_term(term)
 			T_KE = TGETSTR("ke", &tp);
 			T_TS = TGETSTR("ti", &tp);
 			T_TE = TGETSTR("te", &tp);
+#if defined(FEPCTRL) && !defined(MSDOS)
+			T_US = TGETSTR("us", &tp);		/* underline on  */
+			T_UE = TGETSTR("ue", &tp);		/* underline off */
+			T_FB = TGETSTR("Fb", &tp);		/* FEP force on  */
+			T_FQ = TGETSTR("Fq", &tp);		/* FEP force off */
+#endif
 
 		/* key codes */
 			term_strings.t_ku = TGETSTR("ku", &tp);
@@ -219,6 +247,18 @@ set_term(term)
 #else
             term_strings.t_sku = NULL;
             term_strings.t_skd = NULL;
+#endif
+#if defined(UNIX) && !defined(notdef)
+			if (term_strings.t_sku == NULL)
+			{
+				term_strings.t_sku = TGETSTR("kP", &tp);
+				term_strings.t_skd = TGETSTR("kN", &tp);
+			}
+			if (term_strings.t_sku == NULL)
+			{
+				term_strings.t_sku = TGETSTR("kR", &tp);
+				term_strings.t_skd = TGETSTR("kF", &tp);
+			}
 #endif
 			term_strings.t_skl = TGETSTR("#4", &tp);
 			term_strings.t_skr = TGETSTR("%i", &tp);
@@ -267,13 +307,14 @@ set_term(term)
 			p++;
 		if (!*p)
 		{
+#ifdef notdef	/* ken */
 			fprintf(stderr, "'%s' not builtin. Available terminals are:\r\n", term);
 			for (p = builtin_tcaps; *p; p++)
-#ifdef TERMCAP
+#  ifdef TERMCAP
 				fprintf(stderr, "\tbuiltin_%s\r\n", *p);
-#else
+#  else
 				fprintf(stderr, "\t%s\r\n", *p);
-#endif
+#  endif
 			if (!starting)		/* when user typed :set term=xxx, quit here */
 			{
 				wait_return(TRUE);
@@ -282,6 +323,7 @@ set_term(term)
 			sleep(2);
 			fprintf(stderr, "defaulting to '%s'\r\n", *builtin_tcaps);
 			sleep(2);
+#endif
 			p = builtin_tcaps;
 			free(term_strings.t_name);
 			term_strings.t_name = strsave(term = *p);
@@ -327,7 +369,7 @@ set_term(term)
 	set_winsize(width, height, FALSE);	/* may change Rows */
 }
 
-#if defined(TERMCAP) && defined(UNIX)
+#if defined(TERMCAP) && (defined(UNIX) || defined(MSDOS))	/* DOSGEN */
 /*
  * Get Columns and Rows from the termcap. Used after a window signal if the
  * ioctl() fails. It doesn't make sense to call tgetent each time if the "co"
@@ -444,7 +486,7 @@ termcapinit(term)
  */
 #undef BSIZE			/* hpux has BSIZE in sys/param.h */
 #define BSIZE	2048
-static char_u			outbuf[BSIZE];
+static char_u			outbuf[BSIZE+1+1];
 static int				bpos = 0;		/* number of chars in outbuf */
 
 /*
@@ -455,6 +497,18 @@ flushbuf()
 {
 	if (bpos != 0)
 	{
+#ifdef KANJI
+		if (JP_DISP != JP_SJIS)
+		{
+			char_u *tmpptr;
+
+			outbuf[bpos] = NUL;
+			tmpptr = kanjiconvsto(outbuf, JP_DISP, TRUE);
+			mch_write(tmpptr, STRLEN(tmpptr));
+			free(tmpptr);
+		}
+		else
+#endif
 		mch_write(outbuf, bpos);
 		bpos = 0;
 	}
@@ -475,14 +529,33 @@ outchar(c)
 
 	outbuf[bpos] = c;
 
+#ifndef KANJI
 	if (p_nb)			/* for testing: unbuffered screen output (not for MSDOS) */
 		mch_write(outbuf, 1);
 	else
+#endif
 		++bpos;
 
 	if (bpos >= BSIZE)
 		flushbuf();
 }
+
+#ifdef KANJI
+/*
+ * outchar2(c1, c2): put a character into the output buffer for KANJI.
+ *					 Flush it if it becomes full.
+ */
+	void
+outchar2(c1, c2)
+	unsigned	c1, c2;
+{
+	outbuf[bpos++] = c1;
+	outbuf[bpos++] = c2;
+
+	if (bpos >= BSIZE)
+		flushbuf();
+}
+#endif
 
 /*
  * a never-padding outstr.
@@ -512,11 +585,15 @@ outstr(s)
 	if (bpos > BSIZE - 20)		/* avoid terminal strings being split up */
 		flushbuf();
 	if (s)
-#ifdef TERMCAP
+#if defined(TERMCAP) && !(defined(linux) && defined(NCURSES_BUG))
 		tputs(s, 1, TPUTSFUNCAST outchar);
 #else
 		while (*s)
 			outchar(*s++);
+#endif
+#ifdef NT
+	if (GuiWin)
+		flushbuf();
 #endif
 }
 
@@ -598,6 +675,12 @@ ttest(pairs)
 			else
 				T_SO = T_TI;
 		}
+#if defined(FEPCTRL) && !defined(MSDOS)
+		if (T_UE == NULL || *T_UE == NUL)
+			T_US = NULL;
+		if (T_FQ == NULL || *T_FQ == NUL)
+			T_FB = NULL;
+#endif
 	}
 }
 
@@ -628,6 +711,13 @@ inchar(buf, maxlen, time)
 	int				retesc = FALSE;		/* return ESC with gotint */
 	register int 	c;
 	register int	i;
+#ifdef KANJI
+	char			*top;
+	static int		kanji = JP_ASCII;
+	static int		tmplen = 0;
+	static char		tmp[IOSIZE];
+	static char		round[5] = "";
+#endif
 
 	if (time == -1 || time > 100)	/* flush output before waiting */
 	{
@@ -670,14 +760,77 @@ retry:
 	{
 		while (GetChars(buf, maxlen, T_PEEK))
 			;
+#ifdef KANJI
+		kanji = JP_ASCII;
+		tmplen = round[0] = 0;
+#endif
 		return retesc;
 	}
+#ifdef KANJI
+	if (tmplen)	/* flush buffer 'tmp' */
+	{
+		if (tmplen < maxlen)
+		{
+			len = tmplen;
+			memmove(buf, tmp, len);
+			tmplen = 0;
+		}
+		else
+		{
+			len = maxlen;
+			memmove(buf, tmp, len);
+			tmplen -= len;
+			memmove(tmp, tmp + len, tmplen);
+		}
+		return len;
+	}
+
+	if (round[0])
+	{
+		int newlen;
+
+		memmove(buf, round, len = strlen(round));
+		round[0] = NUL;
+		newlen = GetChars(buf + len, maxlen - len, (int)p_tm);
+		len += newlen;
+		if (newlen == 0)
+		{
+			buf[len] = NUL;
+			return len;
+		}
+	}
+	else
+	{
+		len = GetChars(buf, maxlen, time);
+	}
+	top = buf;
+#else
 	len = GetChars(buf, maxlen, time);
+#endif
 
 	for (i = len; --i >= 0; ++buf)
 		if (*buf == 0)
 			*(char_u *)buf = K_ZERO;		/* replace ^@ with special code */
 	*buf = NUL;								/* add trailing NUL */
+#ifdef KANJI
+	tmplen = kanjiconvsfrom(top, len, tmp, IOSIZE, round, JP_KEY, &kanji);
+
+	if (tmplen > maxlen)
+	{
+		len = maxlen;
+		tmplen -= len;
+		memmove(top, tmp, maxlen);
+		memmove(tmp, tmp + len, tmplen);
+	}
+	else
+	{
+		len = tmplen;
+		tmplen = 0;
+		memmove(top, tmp, len);
+	}
+
+	top[len] = NUL;
+#endif
 	return len;
 }
 
@@ -708,10 +861,29 @@ check_termcode(buf)
 			{
 				len -= slen;
 					/* remove matched chars, taking care of noremap */
+#ifdef KANJI
+# ifdef MSDOS
+				if (p == (char_u **)&term_strings.t_del)
+				{
+					del_typestr(slen - 1);
+					buf[0] = DEL;
+					return(len + 1);
+				}
+				else
+# endif
+				{
+					del_typestr(slen - 2);
+					buf[0] = K_SPECIAL;
+					buf[1] = (K_UARROW & 0xff)
+										+ (p - (char_u**)&term_strings.t_ku);
+					return(len + 2);
+				}
+#else
 				del_typestr(slen - 1);
 					/* this relies on the Key numbers to be consecutive! */
 				buf[0] = K_UARROW + (p - (char_u **)&term_strings.t_ku);
 				return (len + 1);
+#endif
 			}
 			return -1;				/* got a partial sequence */
 		}

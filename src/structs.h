@@ -104,7 +104,7 @@ struct u_header
 /*
  * stuctures used in undo.c
  */
-#ifdef UNIX
+#if defined(UNIX) || defined(NT)
 # define ALIGN_LONG		/* longword alignment and use filler byte */
 # define ALIGN_SIZE (sizeof(long))
 #else
@@ -147,7 +147,7 @@ typedef long				blocknr_t;
 
 /*
  * for each (previously) used block in the memfile there is one block header.
- * 
+ *
  * The block may be linked in the used list OR in the free list.
  * The used blocks are also kept in hash lists.
  *
@@ -288,7 +288,7 @@ struct buffer
 								 		 * been changed and not written out. */
 
 	int				 b_notedited;		/* Set to TRUE when file name is
-										 * changed after starting to edit, 
+										 * changed after starting to edit,
 								 		 * reset when file is written out. */
 
 	int              b_nwindows;		/* nr of windows open on this buffer */
@@ -363,8 +363,46 @@ struct buffer
 	char			 b_did_warn;		/* Set to 1 if user has been warned on
 										 * first change of a read-only file */
 
-#ifndef MSDOS
+#if !defined(MSDOS) || defined(NT)
 	int				 b_shortname;		/* this file has an 8.3 filename */
+#endif
+#ifdef KANJI
+	char			*b_p_jc;			/* kanji file code */
+	int				 b_p_ubig;			/* unicode big endian */
+#endif
+#ifdef FEPCTRL
+	int				 b_p_fc;			/* fep control */
+	int				 fepmode;			/* fep current status */
+	char_u			*b_p_ji;			/* keep ASC/JP insert mode */
+	long			 knj_asc;			/* for automatic change of p_ji */
+#endif
+#ifdef TRACK
+	char_u			*b_p_trs;			/* track character set */
+	int				 b_p_tt;			/* transparent track mode */
+#endif
+#if defined(NT) && defined(USE_EXFILE) && defined(USE_MATOME)
+	char			*b_p_ec;			/* encode type nothing */
+#endif
+#ifdef USE_OPT
+	int				 b_p_opt;			/* option mode */
+# define FOPT_MAC_FILE			0x0100		/* macintosh file */
+# define FOPT_EXTEND			0x00ff		/* option mask */
+# define FOPT_DEL_SPC			0x0001		/* delete line end spaces */
+# define FOPT_REP_SPC			0x0002		/* replace kanji space */
+# define FOPT_EXPAND_TAB		0x0004		/* expand tab */
+# define FOPT_ENCODE_TAB		0x0008		/* line top space to tab */
+# define FOPT_C_COMMENT			0x0040		/* C Comment Skip showmatch */
+# define FOPT_GAIJI				0x0080		/* Gaiji */
+#endif
+#if defined(KANJI) && defined(NT) && defined(SYNTAX)
+	char_u		   *b_syn_ptr;
+	char_u		   *b_syn_tag;
+	char_u		   *b_syn_match;
+	char_u		   *b_syn_matchend;
+	char_u		   *b_syn_curp;
+	linenr_t		b_syn_line;
+	linenr_t		b_syn_nline;
+	char_u		   *b_syn_link;
 #endif
 };
 
@@ -442,6 +480,10 @@ struct window
 				w_p_nu,
 				w_p_wrap;
 	long		w_p_scroll;
+#ifdef CRMARK
+	int			w_p_cr;
+# define CRSTR			"$"			/* cr string */
+#endif
 
 	/*
 	 * The w_prev_pcmark field is used to check whether we really did jump to
@@ -468,4 +510,7 @@ struct window
 	int				w_tagstackidx;				/* index just below active entry */
 	int				w_tagstacklen;				/* number of tags on the stack */
 
+#if defined(KANJI) && defined(NT) && defined(SYNTAX)
+	int				 w_p_syt;				/* syntax mode */
+#endif
 };

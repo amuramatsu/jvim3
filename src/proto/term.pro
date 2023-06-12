@@ -4,6 +4,9 @@ char *tgoto __PARMS((char *cm, int x, int y));
 void termcapinit __PARMS((unsigned char *term));
 void flushbuf __PARMS((void));
 void outchar __PARMS((unsigned int c));
+#ifdef KANJI
+void outchar2 __PARMS((unsigned int c1, unsigned int c2));
+#endif
 void outstrn __PARMS((unsigned char *s));
 void outstr __PARMS((unsigned char *s));
 void windgoto __PARMS((int row, int col));

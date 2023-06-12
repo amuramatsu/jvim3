@@ -116,17 +116,17 @@
 
  VIM 1.19 - Changes from Juergen Weigert:
 			Terminal type no longer restricted to machine console. New
-			option -T terminal. New set option "term". Builtin termcap 
-			entries for "amiga", "ansi", "atari", "nansi", "pcterm". 
-			Ported to MSDOS. New set option "textmode" ("tx") to control 
+			option -T terminal. New set option "term". Builtin termcap
+			entries for "amiga", "ansi", "atari", "nansi", "pcterm".
+			Ported to MSDOS. New set option "textmode" ("tx") to control
 			CR-LF translation. CTRL-U and CTRL-D scroll half a screen full,
-			rather than 12 lines. New set option "writebackup" ("wb") to 
+			rather than 12 lines. New set option "writebackup" ("wb") to
 			disable even the 'backup when writing' feature.
 			Ported to SunOS. Full termcap support. Does resize on SIGWINCH.
 
 			Made storage.c portable. Added reading of ".vimrc". Added
 			'helpfile' option. With quoting the first char of an empty line
-			is inverted. Optimized screen updating a bit. Startup code 
+			is inverted. Optimized screen updating a bit. Startup code
 			looks for VIMINIT variable and .vimrc file first. Added option
 			helpfile. Solved bug of inserting deletes: redefined ISSPECIAL.
 			Changed inchar() to use key codes from termcap. Added parameters
@@ -144,7 +144,7 @@
 
  VIM 1.22 - Fixed a bug in doput() with count > 1.
 			Port to linux by Juergen Weigert included.
-			More unix semantics in writeit(), forceit flag ignores errors while 
+			More unix semantics in writeit(), forceit flag ignores errors while
 			preparing backup file. For UNIX, backup is now copied, not moved.
 			When the current directory is not writable, vim now tries a backup
 			in the directory given with the backupdir option. For UNIX, raw mode
@@ -154,94 +154,94 @@
 			term.c and term.h. set_term() now handles all cases. Even builtins
 			when TERMCAP is defined. Show "..." while doing filename completion.
 
- VIM 1.23 -	Improved MSDOS version: Added function and cursor keys to builtin 
-			pcterm. Replaced setmode by settmode, delay by vim_delay and 
+ VIM 1.23 -	Improved MSDOS version: Added function and cursor keys to builtin
+			pcterm. Replaced setmode by settmode, delay by vim_delay and
 			delline by dellines to avoid name conflicts. Made F1 help key.
-			Renamed makecmdtab to mkcmdtab and cmdsearch to csearch for 
-			8 char name limit. Wildcard expansion adds *.* to names without a 
+			Renamed makecmdtab to mkcmdtab and cmdsearch to csearch for
+			8 char name limit. Wildcard expansion adds *.* to names without a
 			dot. Added shell execution.
 			For unix: writeit() overwrites readonly files when forced write,
 			more safety checks. Termcap buffer for linux now 2048 bytes.
 			Expandone() no longer appends "*" to file name. Added "graphic"
 			option. Added ':' command to quoting.
-			
- VIM 1.24	Adjusted number of spaces inserted by dojoin(). MSDOS version uses 
-			searchpath() to find helpfile. Fixed a few small problems. Fixed 
-			nasty bug in getperm() for SAS 6.0. Removed second argument from 
-			wait_return(). Script files accessed in binary mode with MSDOS. 
-			Added 'u' and 'U' commands to quoting (make upper or lower case). 
+
+ VIM 1.24	Adjusted number of spaces inserted by dojoin(). MSDOS version uses
+			searchpath() to find helpfile. Fixed a few small problems. Fixed
+			nasty bug in getperm() for SAS 6.0. Removed second argument from
+			wait_return(). Script files accessed in binary mode with MSDOS.
+			Added 'u' and 'U' commands to quoting (make upper or lower case).
 			Added "CTRL-V [0-9]*" to enter any byte value. Fixed doput().
-			Dodis() displays register 0. Added CTRL-B to insert mode. Attempt 
-			to fix the lockup bug by adding Delay() to startscript(). -v 
-			option now implies -n option. doformat() added to improve 'V' 
+			Dodis() displays register 0. Added CTRL-B to insert mode. Attempt
+			to fix the lockup bug by adding Delay() to startscript(). -v
+			option now implies -n option. doformat() added to improve 'V'
 			command. Replace bool_t with int. Fixed handling of \& and ~ in
 			regsub(). Added interrupt handling in msdos.c for ctrl-break and
 			critical errors. Added scrolljump option. Added :stop. Added -d
 			argument. Fixed bug in quickfix startup from cli. Fixed enforcer
-			hit with aux:. Added CTRL-C handling to unix.c. Fixed "O<BS><CR>" 
-			bug with autoindent. Worked around :cq not working by adding a 
-			printf()!? Added default mapping for MSDOS PageUp etc. Fixed 
-			cursor position after 'Y'. Added shift-cursor commands. Changed 
-			ExpandFile() to keep names with errors. Added CLEAR and CURSUPD 
+			hit with aux:. Added CTRL-C handling to unix.c. Fixed "O<BS><CR>"
+			bug with autoindent. Worked around :cq not working by adding a
+			printf()!? Added default mapping for MSDOS PageUp etc. Fixed
+			cursor position after 'Y'. Added shift-cursor commands. Changed
+			ExpandFile() to keep names with errors. Added CLEAR and CURSUPD
 			arguments to updateScreen(). Fixed CTRL-@ after a change command.
-			modname() changes '.' into '_'. Added emptyrows to screen.c. 
-			Fixed redo of search with offset. Added count to 'z' command. 
-			Made :so! work with :global. Added writing of cursor postition to 
-			startscript(). Minimized terminal requirements. Fixed problem 
-			with line in tags file with mixed spaces and tabs. Fixed problem 
+			modname() changes '.' into '_'. Added emptyrows to screen.c.
+			Fixed redo of search with offset. Added count to 'z' command.
+			Made :so! work with :global. Added writing of cursor postition to
+			startscript(). Minimized terminal requirements. Fixed problem
+			with line in tags file with mixed spaces and tabs. Fixed problem
 			with pattern "\\" in :s and :g. This version posted on Usenet.
 
- VIM 1.25	Improved error messages for :set. Open helpfile in binary mode 
-			for MSDOS. Fixed ignorecase for Unix in cstrncmp(). Fixed read 
-			from NULL with :tags after vim -t. Repaired 'z' command. Changed 
-			outnum() for >32767. In msdos.c flushbuf did write(1, .. instead 
-			of write(0, .. Added secure to fix security. Fixed pointer 
-			use after free() bug in regsub() (made :s fail under MSDOS). 
-			Added nofreeNULL(), needed for some UNIXes. Improved window 
-			resizing for Unix. Fixed messages for report == 0. Added 
-			bsdmemset(). Changed a few small things for portability. Added 
-			:list. Made '0' and '^' exclusive. Fixed regexp for /pattern* 
-			(did /(pattern)* instead of /pattern(n)*). Added "']" and "'[". 
-			Changed Delay(2L) into Delay(10L). Made 'timeout' option 
-			vi-compatible, added 'ttimeout' option. Changed TIOCSETP to 
-			TIOCSETN in unix.c. Added "ti" and "te" termcap entries, makes 
-			sun cmdtool work. Added stop- and starttermcap(). Use cooked 
-			output for listings on Amiga only. Added "starting" flag, no ~s 
-			anymore with every startup. Modname made portable; Added 
-			'shortname' option, Fixed problems with .vim file on messydos. 
-			Global .exrc/.vimrc for Unix added. Added patches for SCO Xenix. 
-			Add :w argument to list of alternate file names. Applied a few 
-			changes for HPUX. Added Flock in writeit() for safety. Command 
-			":'a,'bm." moved to 'b instead of current line. Argument in 
-			'shell' option allowed. Re-implemented :copy and :move. Fixed 
-			BS-CR-BS on empty line bug in edit.c. -t option was ignored if 
-			there is a file ".vim". Changed amiga.c to work without 
-			arp.library for dos 2.0. Fixed "\$" and "\^" in regexp. Fixed 
-			pipe in filter command. Fixed CTRL-U and CTRL-D. With '}' indent 
-			in front of the cursor is included in the operated text. Fixed 
-			tag with '[' in search pattern. Added CTRL-V to 'r'. Fixed "tc" 
-			entry in termlib.c. term_console now default off. Added :noremap 
-			and ^V in :map argument. Replaced CTRL by Ctrl because some 
-			unixes have this already. Fixed "Empty file" message disappearing 
-			when there is no .exrc file. Added CTRL-K for entering digraphs. 
-			Removed escape codes from vim.hlp, added handling of inversion to 
+ VIM 1.25	Improved error messages for :set. Open helpfile in binary mode
+			for MSDOS. Fixed ignorecase for Unix in cstrncmp(). Fixed read
+			from NULL with :tags after vim -t. Repaired 'z' command. Changed
+			outnum() for >32767. In msdos.c flushbuf did write(1, .. instead
+			of write(0, .. Added secure to fix security. Fixed pointer
+			use after free() bug in regsub() (made :s fail under MSDOS).
+			Added nofreeNULL(), needed for some UNIXes. Improved window
+			resizing for Unix. Fixed messages for report == 0. Added
+			bsdmemset(). Changed a few small things for portability. Added
+			:list. Made '0' and '^' exclusive. Fixed regexp for /pattern*
+			(did /(pattern)* instead of /pattern(n)*). Added "']" and "'[".
+			Changed Delay(2L) into Delay(10L). Made 'timeout' option
+			vi-compatible, added 'ttimeout' option. Changed TIOCSETP to
+			TIOCSETN in unix.c. Added "ti" and "te" termcap entries, makes
+			sun cmdtool work. Added stop- and starttermcap(). Use cooked
+			output for listings on Amiga only. Added "starting" flag, no ~s
+			anymore with every startup. Modname made portable; Added
+			'shortname' option, Fixed problems with .vim file on messydos.
+			Global .exrc/.vimrc for Unix added. Added patches for SCO Xenix.
+			Add :w argument to list of alternate file names. Applied a few
+			changes for HPUX. Added Flock in writeit() for safety. Command
+			":'a,'bm." moved to 'b instead of current line. Argument in
+			'shell' option allowed. Re-implemented :copy and :move. Fixed
+			BS-CR-BS on empty line bug in edit.c. -t option was ignored if
+			there is a file ".vim". Changed amiga.c to work without
+			arp.library for dos 2.0. Fixed "\$" and "\^" in regexp. Fixed
+			pipe in filter command. Fixed CTRL-U and CTRL-D. With '}' indent
+			in front of the cursor is included in the operated text. Fixed
+			tag with '[' in search pattern. Added CTRL-V to 'r'. Fixed "tc"
+			entry in termlib.c. term_console now default off. Added :noremap
+			and ^V in :map argument. Replaced CTRL by Ctrl because some
+			unixes have this already. Fixed "Empty file" message disappearing
+			when there is no .exrc file. Added CTRL-K for entering digraphs.
+			Removed escape codes from vim.hlp, added handling of inversion to
 			help().
 
  VIM 1.26	For Unix: Removed global .exrc; renamed global .vimrc to vimrc.
- 			Moved names of *rc and help files to makefile. Added various 
-			little changes for different kinds of Unix. Changed CR-LF 
-			handling in dosource() for MSDOS. Added :mkvimrc. Fixed 
-			WildExpand in unix.c for empty file. Fixed incompatibility with 
+ 			Moved names of *rc and help files to makefile. Added various
+			little changes for different kinds of Unix. Changed CR-LF
+			handling in dosource() for MSDOS. Added :mkvimrc. Fixed
+			WildExpand in unix.c for empty file. Fixed incompatibility with
 			msdos share program (removed setperm(fname, 0) from fileio.c).
 			Added ":set compatible". Fixed 'history=0'.
 
- VIM 1.27	Added USE_LOCALE. Changed swapchar() to use toupper() and 
-			tolower(). Changed init order: .vimrc before EXINIT. Half-fixed 
-			lines that do not fit on screen. A few minor bug fixes. Fixed 
-			typehead bug in Read() in unix.c. Added :number. Reset IXON flag 
-			in unix.c for CTRL-Q. In tags file any Ex command can be used. Ex 
-			search command accepts same flags as normal search command. Fixed 
-			'?' in tag search pattern. 'New file' message was wrong when 'bk' 
+ VIM 1.27	Added USE_LOCALE. Changed swapchar() to use toupper() and
+			tolower(). Changed init order: .vimrc before EXINIT. Half-fixed
+			lines that do not fit on screen. A few minor bug fixes. Fixed
+			typehead bug in Read() in unix.c. Added :number. Reset IXON flag
+			in unix.c for CTRL-Q. In tags file any Ex command can be used. Ex
+			search command accepts same flags as normal search command. Fixed
+			'?' in tag search pattern. 'New file' message was wrong when 'bk'
 			and 'wb' options were both off.
 
  Vim 1.29 to 1.31 and Vim 2.0	See ../readme2.0.
@@ -278,3 +278,13 @@ char		   *longVersion = "Vi IMproved 3.0 by Bram Moolenaar (1994 Aug 12)";
 #else
 char		   *longVersion = "Vi IMproved 3.0 by Bram Moolenaar (1994 Aug 12, compiled " __DATE__ " " __TIME__ ")";
 #endif
+
+#ifdef KANJI
+/*
+ *	 Japanized version
+ */
+char		   *JpVersion = "JVim 3.0-j2.1b";
+char		   *longJpVersion
+					= "JVim 3.0-j2.1b by Ken'ichi Tsuchida (2002 Dec 24)";
+#endif
+

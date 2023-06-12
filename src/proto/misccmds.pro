@@ -6,7 +6,11 @@ int plines __PARMS((long p));
 int plines_win __PARMS((struct window *wp, long p));
 int plines_m __PARMS((long first, long last));
 int plines_m_win __PARMS((struct window *wp, long first, long last));
+#ifdef KANJI
+void inschar __PARMS((int c, int k));
+#else
 void inschar __PARMS((int c));
+#endif
 void insstr __PARMS((unsigned char *s));
 int delchar __PARMS((int fixpos));
 void dellines __PARMS((long nlines, int dowindow, int undo));

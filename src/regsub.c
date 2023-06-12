@@ -49,8 +49,11 @@
 #include "vim.h"
 #include "globals.h"
 #include "proto.h"
+#ifdef KANJI
+#include "kanji.h"
+#endif
 
-#ifdef MSDOS
+#if defined(MSDOS) && !defined(__ARGS)
 # define __ARGS(a)	a
 #endif
 
@@ -103,6 +106,11 @@ do_upper(d, c)
 	char_u *d;
 	int c;
 {
+#ifdef KANJI
+	if (ISkanji(c))
+		*d = c;
+	else
+#endif
 	*d = TO_UPPER(c);
 
 	return (fptr)do_Copy;
@@ -113,6 +121,11 @@ do_Upper(d, c)
 	char_u *d;
 	int c;
 {
+#ifdef KANJI
+	if (ISkanji(c))
+		*d = c;
+	else
+#endif
 	*d = TO_UPPER(c);
 
 	return (fptr)do_Upper;
@@ -123,6 +136,11 @@ do_lower(d, c)
 	char_u *d;
 	int c;
 {
+#ifdef KANJI
+	if (ISkanji(c))
+		*d = c;
+	else
+#endif
 	*d = TO_LOWER(c);
 
 	return (fptr)do_Copy;
@@ -133,6 +151,11 @@ do_Lower(d, c)
 	char_u *d;
 	int c;
 {
+#ifdef KANJI
+	if (ISkanji(c))
+		*d = c;
+	else
+#endif
 	*d = TO_LOWER(c);
 
 	return (fptr)do_Lower;
@@ -146,6 +169,15 @@ strnfcpy(f, d, s, n)
 	int n;
 {
 	while (n-- > 0) {
+#ifdef KANJI
+		if (ISkanji(*s))
+		{
+			f = (fptr)(f(d++, *s++));
+			*d++ = *s++;
+			n--;
+			continue;
+		}
+#endif
 		f = (fptr)(f(d, *s));		/* Turbo C complains without the typecast */
 		if (!*s++)
 			break;
@@ -213,6 +245,10 @@ regtilde(source, magic)
 		}
 		else if (*p == '\\' && p[1])			/* skip escaped characters */
 			++p;
+#ifdef KANJI
+		else if (ISkanji(*p))
+			++p;
+#endif
 	}
 
 	free(reg_prev_sub);
@@ -306,6 +342,10 @@ regsub(prog, source, dest, copy, magic)
 #ifdef CASECONVERT
 				func = (fptr)(func(dst, c));
 							/* Turbo C complains without the typecast */
+# ifdef KANJI
+				if (ISkanji(c))
+					*(++dst) = *src++;
+# endif
 #else
 				*dst = c;
 #endif

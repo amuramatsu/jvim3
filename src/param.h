@@ -32,13 +32,16 @@ EXTERN int	p_bk	INIT(= FALSE);		/* make backups when writing out files */
 #else
 EXTERN int	p_bk	INIT(= TRUE);		/* make backups when writing out files */
 #endif
-#ifdef MSDOS
+#if defined(MSDOS) && !defined(TERMCAP)	/* DOSGEN */
 EXTERN int	p_biosk	INIT(= TRUE);		/* Use bioskey() instead of kbhit() */
 #endif
-#ifdef UNIX
+#if defined(UNIX) || (defined(NT) && !defined(notdef))
 EXTERN char_u *p_bdir	INIT(= (char_u *)BACKUPDIR);	/* directory for backups */
 #endif
 EXTERN long	p_ch	INIT(= 1L);			/* command line height */
+#ifdef CRMARK
+EXTERN char *p_cc	INIT(= CRSTR);		/* cr mark string */
+#endif
 EXTERN int	p_cp	INIT(= FALSE);		/* vi-compatible */
 #ifdef DIGRAPHS
 EXTERN int	p_dg	INIT(= FALSE);		/* enable digraphs */
@@ -59,7 +62,11 @@ EXTERN char_u *p_efm	INIT(= (char_u *)"%f>%l:%c:%t:%n:%m");/* error format */
 # ifdef ARCHIE
 EXTERN char_u *p_efm	INIT(= (char_u *)"%f:%l:%m");	/* error format */
 # else
+#  if defined(NT) && defined(_MSC_VER)
+EXTERN char_u *p_efm	INIT(= (char_u *)"%f(%l) : %m %t%n:%m");
+#  else
 EXTERN char_u *p_efm	INIT(= (char_u *)"\"%f\",%*[^0123456789]%l: %m");	/* error format */
+#  endif
 # endif
 #endif
 #ifdef COMPATIBLE
@@ -70,7 +77,7 @@ EXTERN int	p_ek	INIT(= TRUE);		/* function keys with ESC in insert mode */
 EXTERN int	p_exrc	INIT(= FALSE);		/* read .exrc in current dir */
 EXTERN char_u *p_fp	INIT(= (char_u *)"");			/* name of format program */
 EXTERN int	p_gd	INIT(= FALSE);		/* /g is default for :s */
-#ifdef MSDOS
+#if defined(MSDOS) || defined(KANJI)
 EXTERN int	p_gr	INIT(= TRUE);		/* display graphic characters */
 #else
 EXTERN int	p_gr	INIT(= FALSE);		/* display graphic characters */
@@ -79,7 +86,11 @@ EXTERN int	p_icon	INIT(= FALSE);		/* put file name in icon if possible */
 EXTERN long p_hi	INIT(= 20);			/* command line history size */
 EXTERN char_u *p_hf	INIT(= (char_u *)VIM_HLP);	/* name of help file */
 EXTERN int	p_hid	INIT(= FALSE);		/* buffers can be hidden */
+#if defined(FEPCTRL) && !defined(MSDOS)
+EXTERN char_u *p_hl	INIT(= (char_u *)"db,es,hs,rs,vi,si,fu,Fi");
+#else
 EXTERN char_u *p_hl	INIT(= (char_u *)"db,es,hs,rs,vi,si");
+#endif
 										/* which highlight mode to use */
 EXTERN int	p_ic	INIT(= FALSE);		/* ignore case in searches */
 EXTERN int	p_im	INIT(= FALSE);		/* start editing in input mode */
@@ -88,7 +99,11 @@ EXTERN char_u *p_kp	INIT(= (char_u *)"ref");		/* keyword program */
 EXTERN int	p_js	INIT(= TRUE);		/* use two spaces after period with Join */
 EXTERN long	p_ls	INIT(= 1);			/* last window has status line */
 EXTERN int	p_magic INIT(= TRUE);		/* use some characters for reg exp */
-EXTERN char_u *p_mp	INIT(= (char_u *)"make");		/* program for :make command */
+#if defined(NT) && defined(_MSC_VER)
+EXTERN char_u *p_mp	INIT(= (char_u *)"nmake");
+#else
+EXTERN char_u *p_mp	INIT(= (char_u *)"make");	/* program for :make command */
+#endif
 EXTERN long p_mm	INIT(= MAXMEM);		/* maximal amount of memory for buffer */
 EXTERN long p_mmt	INIT(= MAXMEMTOT);	/* maximal amount of memory for Vim */
 EXTERN long p_mls	INIT(= 5);			/* number of mode lines */
@@ -204,3 +219,46 @@ EXTERN int	p_wb	INIT(= FALSE);		/* write backup files */
 EXTERN int	p_wb	INIT(= TRUE);		/* write backup files */
 #endif
 EXTERN int	p_ye	INIT(= FALSE);		/* Y yanks to end of line */
+
+
+#ifdef KANJI
+EXTERN char *p_jp	INIT(= NULL);		/* code for Japanese letters */
+EXTERN int	p_jkc	INIT(= TRUE);		/* half size KANA convert */
+EXTERN int	p_jrep	INIT(= TRUE);		/* replace mode set */
+EXTERN int	p_jt	INIT(= FALSE);		/* japanese tilde */
+EXTERN int	p_jic	INIT(= FALSE);		/* japanese ignore case in searches */
+EXTERN int	p_jjs	INIT(= TRUE);		/* no use spaces after kanji with Join */
+#endif
+#ifdef FEPCTRL
+EXTERN long	p_ja	INIT(= 0);			/* number of characters to reset p_ji */
+EXTERN char_u *p_fk	INIT(= "\\@");		/* fep on/off CTRL-\ or CTRL-@ */
+EXTERN char_u *p_fo	INIT(= "r");		/* fep on key */
+# ifdef ONEW
+EXTERN int	p_ordw	INIT(= FALSE);		/* Onew status line redraw */
+# endif
+#endif
+#ifdef NT
+EXTERN char *p_win	INIT(= NULL);		/* window size */
+EXTERN int	p_cpage	INIT(= 932);		/* Unicode Code Page */
+#endif
+#ifdef FEXRC
+EXTERN int	p_fexrc	INIT(= FALSE);		/* .vimrc execute ext */
+#endif
+#ifdef USE_OPT
+EXTERN int	p_opt	INIT(= 0);
+# define OPT_EXPAND_CMDLINE		0x0001		/* expand file and directory name */
+# define OPT_NO_SMART_CMDLINE	0x0010		/* smart command line history */
+# define OPT_NO_ERR_DISP		0x0020		/* quickfix no error display */
+# define OPT_NO_JIS				0x0040		/* no JIS code + SJIS/EUC decode */
+# define OPT_ORG_BINMODE		0x0080		/* use original binary mode */
+#endif
+#if defined(NT) && defined(USE_MATOME)
+EXTERN char_u *p_dc	INIT(= "a");			/* decode type auto detect */
+#endif
+#ifdef USE_TAGEX
+EXTERN int	p_tagex	INIT(= TRUE);			/* extend tag jump */
+#endif
+#if defined(KANJI) && defined(NT) && defined(SYNTAX)
+EXTERN char_u *p_synt	INIT(= "cdefgmnpstuvx");
+EXTERN long p_synl		INIT(= 0);			/* tag/pear check line */
+#endif

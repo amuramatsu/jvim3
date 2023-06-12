@@ -55,7 +55,10 @@
 
 #define BASENAMELEN		(MAXNAMLEN - 5)
 
+#ifdef stricmp
+#undef stricmp
 #define stricmp vim_stricmp
+#endif
 
 /*
  * prototypes for functions not in unix.c
@@ -63,7 +66,7 @@
 #ifdef SCO
 int		chmod __ARGS((const char *, mode_t));
 #endif
-#if !defined(linux) && !defined(__NeXT) && !defined(M_UNIX) && !defined(ISC) && !defined(USL) && !defined(SOLARIS)
+#if !defined(__GNU__) && !defined(linux) && !defined(__NeXT) && !defined(M_UNIX) && !defined(ISC) && !defined(USL) && !defined(SOLARIS)
 int		remove __ARGS((const char *));
 /*
  * If you get an error message on "const" in the lines above, try
@@ -80,14 +83,14 @@ int		rename __ARGS((const char *, const char *));
 int		stricmp __ARGS((char *, char *));
 
 /* memmove is not present on all systems, use our own version or bcopy */
-#if !defined(SCO) && !defined(SOLARIS) && !defined(AIX) && !defined(UTS4) && !defined(USL) && !defined(MIPS) && !defined(__NetBSD__) && !defined(__FreeBSD__) && !defined(linux) && !defined(UNISYS)
+#if !defined(SCO) && !defined(SOLARIS) && !defined(AIX) && !defined(UTS4) && !defined(USL) && !defined(MIPS) && !defined(__OpenBSD__) && !defined(__NetBSD__) && !defined(__FreeBSD__) && !defined(linux) && !defined(UNISYS) && !defined(__CYGWIN__) && !defined(__bsdi__) && !defined(__GNU__)
 # ifdef SYSV_UNIX
 #   define MEMMOVE
 void *memmove __ARGS((void *, void *, int));
 # else
 #  define memmove(to, from, len) bcopy(from, to, len)
-#  if !(defined(hpux) && defined(__STDC__))
-#   ifdef linux
+#  if !(defined(hpux) && defined(__STDC__) || defined(__bsdi__))
+#   if defined(linux) || defined(__GNU__)
 extern void bcopy __ARGS((const void *, void *, int));
 #   else
 extern void bcopy __ARGS((char *, char *, int));
@@ -101,7 +104,7 @@ extern void bcopy __ARGS((char *, char *, int));
 # define strrchr(ptr, c)		rindex((ptr), (c))
 #endif
 
-#ifdef BSD_UNIX
+#if defined(BSD_UNIX) && !defined(__bsdi__) && !defined(linux) && !defined(__GNU__)
 # define memset(ptr, c, size)	bsdmemset((ptr), (c), (size))
 char *bsdmemset __ARGS((char *, int, long));
 #endif
@@ -110,17 +113,13 @@ char *bsdmemset __ARGS((char *, int, long));
  * Most unixes don't have these in include files.
  * If you get a "redefined" error, delete the offending line.
  */
-#if !defined(__NetBSD__) && !defined(__FreeBSD__)
+#if !defined(__OpenBSD__) && !defined(__NetBSD__) && !defined(__FreeBSD__) && !defined(linux) && !defined(__CYGWIN__) && !defined(__bsdi__) && !defined(__GNU__)
   extern int	ioctl __ARGS((int, int, ...));
 #endif
 extern int	fsync __ARGS((int));
 extern char *getwd __ARGS((char *));
-#if !defined(__NetBSD__) && !defined(__FreeBSD__)
-# ifdef linux
-   extern void bzero __ARGS((void *, int));
-# else
-   extern void bzero __ARGS((char *, int));
-# endif
+#if !defined(__OpenBSD__) && !defined(__NetBSD__) && !defined(__FreeBSD__) && !defined(linux) && !defined(__CYGWIN__) && !defined(__bsdi__) && !defined(__hpux) && !defined(__GNU__)
+  extern void bzero __ARGS((char *, int));
 #endif
 #if defined(system_that_does_not_have_access_in_an_include_file)
 extern int access __ARGS((char *, int));

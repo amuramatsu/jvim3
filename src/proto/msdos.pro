@@ -14,7 +14,11 @@ void	mch_write __ARGS((char_u *, int));
 int 	GetChars __ARGS((char_u *, int, int));
 int		mch_char_avail __ARGS((void));
 void	mch_suspend __ARGS((void));
+#ifdef NT
+void	mch_windinit __ARGS((int, char **, char *));
+#else
 void	mch_windinit __ARGS((void));
+#endif
 void	check_win __ARGS((int, char **));
 void	fname_case __ARGS((char_u *));
 void	mch_settitle __ARGS((char_u *, char_u *));
@@ -38,3 +42,28 @@ int		has_wildcard __ARGS((char_u *));
 int		ExpandWildCards __ARGS((int, char_u **, int *, char_u ***, int, int));
 void	FreeWild __ARGS((int, char_u **));
 int		vim_chdir __ARGS((char_u *));
+
+/* prototypes from dos_v.c/winnt.c */
+#ifdef TERMCAP		/* DOSGEN */
+void	chk_ctlkey __ARGS((int *, int *));
+#endif
+
+/* prototypes from winnt.c */
+#ifdef NT
+# ifdef __BORLANDC__
+void	sleep __ARGS((int));
+# else
+int		sleep __ARGS((int));
+# endif
+void	wincmd_paste __ARGS((void));
+void	wincmd_cut __ARGS((void));
+void	wincmd_delete __ARGS((void));
+void	wincmd_active __ARGS((void));
+void	wincmd_redraw __ARGS((void));
+int		wincmd_grep __ARGS((char *, char *));
+int		wincmd_togle __ARGS((void));
+int		wincmd_rotate __ARGS((void));
+void	InitCommand __ARGS((void));
+void	win_history_append __ARGS((BUF *));
+char *	win_history_line __ARGS((BUF *));
+#endif

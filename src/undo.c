@@ -180,7 +180,7 @@ u_savecommon(top, bot, newbot)
 		u_getbot();
 
 	size = bot - top - 1;
-#ifndef UNIX
+#if !defined(UNIX) && !defined(NT)
 		/*
 		 * With Amiga and MSDOS we can't handle big undo's, because then
 		 * u_alloc_line would have to allocate a block larger than 32K

@@ -184,6 +184,7 @@ static struct
 	{(char_u *)"xall",			BANG+TRLBAR},
 	{(char_u *)"yank",			RANGE+REGSTR+COUNT+TRLBAR},
 	{(char_u *)"z",				RANGE+COUNT+TRLBAR},		/* not supported */
+	{(char_u *)"syntax",		EXTRA+TRLBAR+USECTRLV},
 	{(char_u *)"@",				RANGE+EXTRA+TRLBAR},
 	{(char_u *)"!",				RANGE+NAMEDFS},
 	{(char_u *)"<",				RANGE+COUNT+TRLBAR},

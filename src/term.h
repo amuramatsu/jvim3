@@ -84,10 +84,19 @@ typedef struct _tcarr
   char_u *t_sf9;	/* kf19     F9	shifted function key 9 */
   char_u *t_sf10;	/* kf20     FA	shifted function key 10 */
   char_u *t_help;	/* khlp     %1	help key */
+#if defined(KANJI) && defined(MSDOS)
+  char_u *t_del;	/* del        	del key */
+#endif
   char_u *t_undo;	/* kund     &8	undo key */
   /* adjust inchar() for last key entry! */
 
   char_u *t_csc;	/* -		-	cursor relative to scrolling region */
+#if defined(FEPCTRL) && !defined(MSDOS)
+  char *t_us;		/* uline    ul	underline mode */
+  char *t_ue;		/* uend     ue	non-undeline mode */
+  char *t_fb;		/* FEP force on  */
+  char *t_fq;		/* FEP force off */
+#endif
 } Tcarr;
 
 extern Tcarr term_strings;	/* currently used terminal strings */
@@ -120,6 +129,12 @@ extern Tcarr term_strings;	/* currently used terminal strings */
 #define T_TS	(term_strings.t_ts)
 #define T_TE	(term_strings.t_te)
 #define T_CSC	(term_strings.t_csc)
+#if defined(FEPCTRL) && !defined(MSDOS)
+#define T_US	(term_strings.t_us)
+#define T_UE	(term_strings.t_ue)
+#define T_FB	(term_strings.t_fb)
+#define T_FQ	(term_strings.t_fq)
+#endif
 
 
 #ifndef TERMINFO
@@ -248,6 +263,116 @@ extern Tcarr term_strings;	/* currently used terminal strings */
 \0\316]\0\
 \0\0"
 
+#ifdef KANJI
+/*
+ * These codes are valid for the pc video.
+ * The entries that start with ESC | are translated into conio calls in msdos.c.
+ */
+#  define PCTERM_TCAP "pcterm\0\
+\0\033|K\0\
+\0\033|L\0\
+\1\033|M\0\
+\1\033|%i%d;%dr\0\
+\0\033|J\0\
+\0\033|v\0\
+\0\033|V\0\
+\0\033|W\0\
+\0\033|0m\0\
+\0\033|112m\0\
+\0\033|63m\0\
+\0\033|0m\0\
+\0\033|31m\0\
+\0\001\0\
+\0\033|%i%d;%dH\0\
+\7\375H\0\
+\0\375P\0\
+\0\375K\0\
+\0\375M\0\
+\0\375I\0\
+\0\375Q\0\
+\0\375s\0\
+\0\375t\0\
+\0\375;\0\
+\0\375<\0\
+\0\375=\0\
+\0\375>\0\
+\0\375?\0\
+\0\375@\0\
+\0\375A\0\
+\0\375B\0\
+\0\375C\0\
+\0\375D\0\
+\0\375T\0\
+\0\375U\0\
+\0\375V\0\
+\0\375W\0\
+\0\375X\0\
+\0\375Y\0\
+\0\375Z\0\
+\0\375[\0\
+\0\375\\\0\
+\0\375]\0\
+\0\375;\0\
+\0\375S\0\
+\0\0"
+
+/*
+ * These codes are valid for the NT Console 
+ * The entries that start with ESC | are translated into console calls 
+ * in winnt.c.
+ */
+#  define NTCONSOLE_TCAP "ntconsole\0\
+\0\033|K\0\
+\0\033|L\0\
+\0\033|%dL\0\
+\0\033|M\0\
+\0\033|%dM\0\
+\0\033|%d;%dS\0\
+\0\033|J\0\
+\0\033|v\0\
+\0\033|V\0\
+\1\033|0m\0\
+\0\033|63m\0\
+\0\033|207m\0\
+\0\033|0m\0\
+\0\033|121m\0\
+\0\001\0\
+\0\033|%i%d;%dH\0\
+\2\007\0\
+\4\375H\0\
+\0\375P\0\
+\0\375K\0\
+\0\375M\0\
+\0\375I\0\
+\0\375Q\0\
+\0\375s\0\
+\0\375t\0\
+\0\375;\0\
+\0\375<\0\
+\0\375=\0\
+\0\375>\0\
+\0\375?\0\
+\0\375@\0\
+\0\375A\0\
+\0\375B\0\
+\0\375C\0\
+\0\375D\0\
+\0\375T\0\
+\0\375U\0\
+\0\375V\0\
+\0\375W\0\
+\0\375X\0\
+\0\375Y\0\
+\0\375Z\0\
+\0\375[\0\
+\0\375\\\0\
+\0\375]\0\
+\0\375;\0\
+\0\375S\0\
+\0\0"
+
+#else	/* KANJI */
+
 /*
  * These codes are valid for the pc video.
  * The entries that start with ESC | are translated into conio calls in msdos.c.
@@ -342,6 +467,7 @@ extern Tcarr term_strings;	/* currently used terminal strings */
 \0\316]\0\
 \0\0"
 
+#endif	/* KANJI */
 
 #  define VT52_TCAP "vt52\0\
 \0\033K\0\
@@ -486,8 +612,8 @@ extern Tcarr term_strings;	/* currently used terminal strings */
 
 # else /* NO_BUILTIN_TCAPS */
 #  define DUMB_TCAP "dumb\0\
-\6\014\0\
-\9\033[%i%d;%dH\0\
+\006\014\0\
+\009\033[%i%d;%dH\0\
 \0\0"
 # endif /* NO_BUILTIN_TCAPS */
 

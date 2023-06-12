@@ -23,5 +23,5 @@ int vgetc __PARMS((void));
 int vpeekc __PARMS((void));
 int domap __PARMS((int maptype, unsigned char *keys, int mode));
 int check_abbr __PARMS((int c, unsigned char *ptr, int col, int mincol));
-int makemap __PARMS((struct __stdio *fd));
-int putescstr __PARMS((struct __stdio *fd, unsigned char *str, int set));
+int makemap __PARMS((FILE *fd));
+int putescstr __PARMS((FILE *fd, unsigned char *str, int set));

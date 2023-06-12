@@ -16,11 +16,19 @@
  */
 
 #ifndef SYSVIMRC_FILE
-# define SYSVIMRC_FILE	"$VIM\\_vimrc"
+# ifdef notdef	/* ken */
+#  define SYSVIMRC_FILE	"$VIM\\_vimrc"
+# else
+#  define SYSVIMRC_FILE	"$HOME\\_vimrc"
+# endif
 #endif
 
 #ifndef SYSEXRC_FILE
-# define SYSEXRC_FILE	"$VIM\\_exrc"
+# ifdef notdef	/* ken */
+#  define SYSEXRC_FILE	"$VIM\\_exrc"
+# else
+#  define SYSEXRC_FILE	"$HOME\\_exrc"
+# endif
 #endif
 
 #ifndef VIMRC_FILE
@@ -31,26 +39,56 @@
 # define EXRC_FILE		"_exrc"
 #endif
 
+#ifndef DEFVIMRC_FILE /* ken */
+# define DEFVIMRC_FILE	"$VIM\\vimrc"
+#endif
+
 #ifndef VIM_HLP
 # define VIM_HLP		"$VIM\\vim.hlp"
 #endif
 
+#ifndef notdef
+# ifndef BACKUPDIR
+#  define BACKUPDIR		"$HOME"
+# endif
+#endif
+
 #ifndef DEF_DIR
-# define DEF_DIR		"c:\\tmp"
+# ifndef notdef	/* ken */
+#  define DEF_DIR		"$TMP"
+# else
+#  define DEF_DIR		"c:\\tmp"
+# endif
 #endif
 
 #define TMPNAME1		"viXXXXXX"		/* put it in current dir */
 #define TMPNAME2		"voXXXXXX"		/*  is there a better place? */
-#define TMPNAMELEN		10
+#ifdef NT
+# define TMPNAMELEN		L_tmpnam
+#else
+# define TMPNAMELEN		10
+#endif
 
 #ifndef MAXMEM
-# define MAXMEM			256				/* use up to 256Kbyte for buffer */
+# ifdef NT
+#  define MAXMEM		512				/* use up to 512Kbyte for buffer */
+# else
+#  define MAXMEM		256				/* use up to 256Kbyte for buffer */
+# endif
 #endif
 #ifndef MAXMEMTOT
-# define MAXMEMTOT		0				/* decide in set_init */
+# ifdef NT
+#  define MAXMEMTOT		2048			/* use up to 2048Kbyte for Vim */
+# else
+#  define MAXMEMTOT		0				/* decide in set_init */
+# endif
 #endif
 
-#define BASENAMELEN		8				/* length of base of file name */
+#ifdef NT
+# define BASENAMELEN	_MAX_PATH		/* length of base of file name */
+#else
+# define BASENAMELEN	8				/* length of base of file name */
+#endif
 
 /*
  * MSDOS Machine-dependent routines.

@@ -17,6 +17,9 @@
 #include "cmdtab.h"
 #include "ops.h"			/* included because we call functions in ops.c */
 #include "fcntl.h"			/* for chdir() */
+#ifdef KANJI
+#include "kanji.h"
+#endif
 
 /*
  * variables shared between getcmdline() and redrawcmdline()
@@ -24,7 +27,11 @@
 static int		 cmdlen;		/* number of chars on command line */
 static int		 cmdpos;		/* current cursor position */
 static int		 cmdspos;		/* cursor column on screen */
+#ifdef NT
+	   int		 cmdfirstc; 	/* ':', '/' or '?' */
+#else
 static int		 cmdfirstc; 	/* ':', '/' or '?' */
+#endif
 static char_u	*cmdbuff;		/* pointer to command line buffer */
 
 /*
@@ -80,7 +87,12 @@ getcmdline(firstc, buff)
 	int			firstc; 	/* either ':', '/', or '?' */
 	char_u		*buff;	 	/* buffer for command string */
 {
+#ifdef KANJI
+	unsigned int	 	c;
+			 int		k;
+#else
 	register char_u 	c;
+#endif
 			 int		cc;
 			 int		nextc = 0;
 	register int		i;
@@ -169,6 +181,13 @@ getcmdline(firstc, buff)
 			c = vgetc();
 			if (c == Ctrl('C'))
 				got_int = FALSE;
+#ifdef KANJI
+			else if (ISkanji(c))
+				k = vgetc();
+#endif
+#if defined(MSDOS) && defined(TERMCAP)		/* DOSGEN */
+			chk_ctlkey((int *)&c, &k);
+#endif
 		}
 
 		if (lookfor && c != K_SDARROW && c != K_SUARROW)
@@ -185,6 +204,18 @@ getcmdline(firstc, buff)
 		c = dodigraph(c);
 #endif
 
+#ifdef FEPCTRL
+		if (KeyTyped && ((0 <= c && c <= 0x20 && c != ESC) || c == K_ZERO)
+				&& curbuf->b_p_fc
+				&& (p_fk != NULL && STRRCHR(p_fk, c == K_ZERO ? '@' : c + '@') != NULL))
+		{
+			if (fep_get_mode())
+				fep_force_off();
+			else
+				fep_force_on();
+			continue;
+		}
+#endif
 		if (c == '\n' || c == '\r' || (c == ESC && !KeyTyped))
 		{
 			if (ccheck_abbr(c + 0x100))
@@ -224,6 +255,7 @@ getcmdline(firstc, buff)
 			c = '\n';
 
 		do_abbr = TRUE;			/* default: check for abbreviation */
+
 		switch (c)
 		{
 		case BS:
@@ -234,6 +266,11 @@ getcmdline(firstc, buff)
 				 * character, except at end of line
 				 */
 				if (c == DEL && cmdpos != cmdlen)
+#ifdef KANJI
+					if (ISkanji(buff[cmdpos]))
+						cmdpos += 2;
+					else
+#endif
 					++cmdpos;
 				if (cmdpos > 0)
 				{
@@ -243,11 +280,24 @@ getcmdline(firstc, buff)
 						while (cmdpos && isspace(buff[cmdpos - 1]))
 							--cmdpos;
 						i = isidchar(buff[cmdpos - 1]);
+#ifdef KANJI
+						if (cmdpos && (ISkanjiPosition(buff, cmdpos) == 2))
+						{
+							while (cmdpos && !isspace(buff[cmdpos - 1])
+									&& (ISkanjiPosition(buff, cmdpos) == 2))
+								cmdpos -= 2;
+						}
+						else
+#endif
 						while (cmdpos && !isspace(buff[cmdpos - 1]) && isidchar(buff[cmdpos - 1]) == i)
 							--cmdpos;
 					}
 					else
+#ifdef KANJI
+						cmdpos -= ISkanjiPosition(buff, cmdpos) == 2 ? 2 : 1;
+#else
 						--cmdpos;
+#endif
 					cmdlen -= j - cmdpos;
 					i = cmdpos;
 					while (i < cmdlen)
@@ -303,6 +353,14 @@ do_esc:
 				{
 						if (cmdpos >= cmdlen)
 								break;
+#ifdef KANJI
+						if (ISkanji(buff[cmdpos]))
+						{
+							cmdspos += 2;
+							cmdpos ++;
+						}
+						else
+#endif
 						cmdspos += charsize(buff[cmdpos]);
 						++cmdpos;
 				}
@@ -316,6 +374,14 @@ do_esc:
 						if (cmdpos <= 0)
 								break;
 						--cmdpos;
+#ifdef KANJI
+						if (ISkanji(buff[cmdpos - 1]))
+						{
+							cmdspos -= 2;
+							cmdpos --;
+						}
+						else
+#endif
 						cmdspos -= charsize(buff[cmdpos]);
 				}
 				while (c == K_SLARROW && buff[cmdpos - 1] != ' ');
@@ -371,7 +437,7 @@ do_esc:
 					continue;
 
 				i = hiscnt;
-			
+
 					/* save current command string */
 				if (c == K_SUARROW || c == K_SDARROW)
 				{
@@ -427,9 +493,18 @@ do_esc:
 				}
 				continue;
 
+#ifdef NT
+		case Ctrl('S'):
+				if (!GuiWin)
+					break;
+#endif
 		case Ctrl('V'):
 				putcmdline('^', buff);
+#ifdef KANJI
+				c = get_literal(&nextc, &k);
+#else
 				c = get_literal(&nextc);	/* get next (two) character(s) */
+#endif
 				do_abbr = FALSE;			/* don't do abbreviation now */
 				break;
 
@@ -454,13 +529,37 @@ do_esc:
 		if (do_abbr && !isidchar(c) && ccheck_abbr(c))
 			continue;
 
+#ifdef KANJI
+		if (cmdlen < CMDBUFFSIZE - 3)
+#else
 		if (cmdlen < CMDBUFFSIZE - 2)
+#endif
 		{
+#ifdef KANJI
+				if (ISkanji(c))
+				{
+					cmdlen += 2;
+					for (i = cmdlen; i > cmdpos; --i)
+							buff[i] = buff[i - 2];
+					buff[cmdpos] = c;
+					buff[cmdpos + 1] = k;
+					msg_outtrans(buff + cmdpos, cmdlen - cmdpos);
+					cmdpos += 2;
+				}
+				else
+				{
+#endif
 				for (i = cmdlen++; i > cmdpos; --i)
 						buff[i] = buff[i - 1];
 				buff[cmdpos] = c;
 				msg_outtrans(buff + cmdpos, cmdlen - cmdpos);
 				++cmdpos;
+#ifdef KANJI
+				}
+				if (ISkanji(c))
+					i = 2;
+				else
+#endif
 				i = charsize(c);
 				cmdspos += i;
 		}
@@ -475,6 +574,40 @@ returncmd:
 	 */
 	if (cmdlen != 0)
 	{
+#ifdef USE_OPT
+		if (!(p_opt & OPT_NO_SMART_CMDLINE))
+		{
+			if (retval == OK && hislen != 0)
+			{
+				cc = FALSE;
+				for (i = 0; i < hislen; i++)
+				{
+					if (history[i] == NULL)
+						break;
+					if (strcmp(history[i], buff) == 0)
+					{
+						cc = TRUE;
+						free(history[i]);
+						for (j = i; j < hislen - 1; j++)
+							history[j] = history[j + 1];
+						history[hislen - 1] = NULL;
+						for (j = hislen - 1; j > hisidx; j--)
+							history[j] = history[j - 1];
+						history[hisidx] = strsave(buff);
+						break;
+					}
+				}
+				if (!cc)
+				{
+					if (++hisidx == hislen)
+						hisidx = 0;
+					free(history[hisidx]);
+					history[hisidx] = strsave(buff);
+				}
+			}
+		}
+		else
+#endif
 		if (hislen != 0)
 		{
 			if (++hisidx == hislen)
@@ -496,6 +629,10 @@ returncmd:
 	 */
 	msg_check();
 	State = NORMAL;
+#ifdef FEPCTRL
+	if (curbuf->b_p_fc && !FepOn && fep_get_mode())
+		fep_force_off();
+#endif
 	return retval;
 }
 
@@ -550,13 +687,57 @@ redrawcmd()
 
 	cmdspos = 1;
 	for (i = 0; i < cmdlen && i < cmdpos; ++i)
+#ifdef KANJI
+		if (ISkanji(cmdbuff[i]))
+		{
+			cmdspos += 2;
+			i++;
+		}
+		else
+#endif
 		cmdspos += charsize(cmdbuff[i]);
 }
 
 	static void
 cursorcmd()
 {
+#ifdef KANJI
+	int			i;
+	int			col = 1;
+	int			row = 0;
+
+	for (i = 0; col < cmdspos && i < cmdpos; ++i)
+	{
+		if (ISkanji(cmdbuff[i]))
+		{
+			if (col >= (Columns - 1))
+			{
+				col = 2;
+				row++;
+			}
+			else if (col >= (Columns - 2))
+			{
+				col = 0;
+				row++;
+			}
+			else
+				col += 2;
+			i++;
+		}
+		else
+		{
+			col += charsize(cmdbuff[i]);
+			if (col >= Columns)
+			{
+				col -= Columns;
+				row++;
+			}
+		}
+	}
+	msg_pos(cmdline_row + row, col);
+#else
 	msg_pos(cmdline_row + (cmdspos / (int)Columns), cmdspos % (int)Columns);
+#endif
 	windgoto(msg_row, msg_col);
 }
 
@@ -572,7 +753,7 @@ ccheck_abbr(c)
 {
 	if (p_paste || no_abbr)			/* no abbreviations or in paste mode */
 		return FALSE;
-	
+
 	return check_abbr(c, cmdbuff, cmdpos, 0);
 }
 
@@ -669,6 +850,10 @@ DoOneCmd(buff)
 	int					usefilter = FALSE;		/* filter instead of file name */
 	char_u				*nextcomm = NULL;		/* no next command yet */
 	int					amount = 0;				/* for ":>" and ":<"; init for gcc */
+#ifdef KANJI
+	char_u				code;
+	int					ubig;
+#endif
 
 	if (quitmore)
 		--quitmore;		/* when not editing the last file :q has to be typed twice */
@@ -1020,9 +1205,29 @@ DoOneCmd(buff)
 	 */
 	if (argt & XFILE)
 	{
+#ifdef NT
+		int quote = FALSE;
+#endif
 		for (p = arg; *p; ++p)
 		{
 			c = *p;
+#ifdef NT
+			if (c == '"' && *(p - 1) != '\\')
+			{
+				if (quote)
+					quote = FALSE;
+				else
+					quote = TRUE;
+				continue;
+			}
+			if (quote)
+				continue;
+#endif
+#ifdef USE_OPT
+			if ((p_opt & OPT_EXPAND_CMDLINE) && ((c == '&') || (c == '@')))
+				;
+			else
+#endif
 			if (c != '%' && c != '#')	/* nothing to expand */
 				continue;
 			if (*(p - 1) == '\\')		/* remove escaped char */
@@ -1032,10 +1237,39 @@ DoOneCmd(buff)
 				continue;
 			}
 
+#ifdef USE_OPT
+			if ((p_opt & OPT_EXPAND_CMDLINE) && (c == '@'))
+			{
+				if (check_fname() == FAIL)
+					goto doend;
+				q = gettail(curbuf->b_filename);
+				n = 1;
+			}
+			else if ((p_opt & OPT_EXPAND_CMDLINE) && (c == '&'))
+			{
+				static char_u	buf[MAXPATHL];
+				if (check_fname() == FAIL)
+					goto doend;
+				STRCPY(buf, curbuf->b_filename);
+				q = buf;
+				q = gettail(buf);
+				*q = NUL;
+				q = buf;
+				if (*q && ispathsep(*(q + STRLEN(q) - 1)))
+					*(q + STRLEN(q) - 1) = NUL;
+				n = 1;
+			}
+			else
+#endif
 			if (c == '%')				/* current file */
 			{
 				if (check_fname() == FAIL)
 					goto doend;
+#ifndef notdef
+				if (curbuf->b_filename)
+					q = curbuf->b_filename;
+				else
+#endif
 				q = curbuf->b_xfilename;
 				n = 1;					/* length of what we expand */
 			}
@@ -1104,6 +1338,22 @@ DoOneCmd(buff)
 			}
 		}
 	}
+
+#ifdef NT
+	while ((usefilter || cmdidx == CMD_bang) && arg != NULL
+						&& (*arg == '.' || strchr(arg, '/') != NULL))
+	{
+		static char_u		argbuf[CMDBUFFSIZE];
+
+		if (strchr(arg, ' ') && (strchr(arg, ' ') < strchr(arg, '/')))
+			break;
+		if (strchr(arg, '\t') && (strchr(arg, '\t') < strchr(arg, '/')))
+			break;
+		if (FullName(arg, argbuf, sizeof(argbuf)) == OK)
+			arg = argbuf;
+		break;
+	}
+#endif
 
 /*
  * 6. switch on command name
@@ -1185,7 +1435,7 @@ cmdswitch:
 				if (((cmdidx == CMD_wq ||
 						(curbuf->b_nwindows == 1 && curbuf->b_changed)) &&
 						(check_readonly() || dowrite(arg, FALSE) == FAIL)) ||
-					check_more(TRUE) == FAIL || 
+					check_more(TRUE) == FAIL ||
 					(firstwin == lastwin && check_changed_any(FALSE)))
 				{
 					exiting = FALSE;
@@ -1239,7 +1489,7 @@ cmdswitch:
 				ml_preserve(curbuf, TRUE);
 				break;
 
-		case CMD_args:		
+		case CMD_args:
 					/*
 					 * ":args file": handle like :next
 					 */
@@ -1562,6 +1812,10 @@ doargument:
 				}
 				if (!u_save(line2, (linenr_t)(line2 + 1)))
 					break;
+#ifdef KANJI
+				code = *curbuf->b_p_jc;
+				ubig = curbuf->b_p_ubig;
+#endif
 				if (*arg == NUL)
 				{
 					if (check_fname() == FAIL)	/* check for no file name at all */
@@ -1570,6 +1824,10 @@ doargument:
 				}
 				else
 					i = readfile(arg, NULL, line2, FALSE, (linenr_t)0, MAXLNUM);
+#ifdef KANJI
+				*curbuf->b_p_jc = code;
+				curbuf->b_p_ubig= ubig;
+#endif
 				if (i == FAIL)
 				{
 					emsg2(e_notopen, arg);
@@ -1580,7 +1838,7 @@ doargument:
 
 		case CMD_cd:
 		case CMD_chdir:
-#ifdef UNIX
+#if defined(UNIX) || !defined(notdef)	/* ken */
 				/*
 				 * for UNIX ":cd" means: go to home directory
 				 */
@@ -1613,13 +1871,23 @@ doargument:
 				/*FALLTHROUGH*/
 
 		case CMD_pwd:
+#ifdef KANJI
+				i = vim_dirname(NameBuff, MAXPATHL);
+				STRCPY(NameBuff, fileconvsfrom(NameBuff));
+				if (i == OK)
+#else
 				if (vim_dirname(NameBuff, MAXPATHL) == OK)
+#endif
 					msg(NameBuff);
 				else
 					emsg(e_unknown);
 				break;
 
 		case CMD_equal:
+#ifndef notdef
+				if (addr_count == 0)		/* quick hack */
+					line2 = curbuf->b_ml.ml_line_count;
+#endif
 				smsg((char_u *)"line %ld", (long)line2);
 				break;
 
@@ -1761,6 +2029,19 @@ doabbr:
 							break;
 				}
 				break;
+		case CMD_syntax:
+#if defined(KANJI) && defined(NT) && defined(SYNTAX)
+				++RedrawingDisabled;
+				switch (syn_add(curwin->w_buffer, arg))
+				{
+					case 1: emsg(e_invarg);
+							break;
+					case 2: emsg(e_invstring);
+							break;
+				}
+				--RedrawingDisabled;
+#endif
+				break;
 
 		case CMD_display:
 				dodis();		/* display buffer contents */
@@ -1771,7 +2052,21 @@ doabbr:
 				break;
 
 		case CMD_version:
+#ifndef KANJI
 				msg(longVersion);
+#else
+				{
+					char			buf[256];
+# ifdef ONEW
+					extern char *Onew_version();
+					sprintf(buf, "%s / %s + %s",
+								longVersion, longJpVersion, Onew_version());
+# else
+					sprintf(buf, "%s / %s", longVersion, longJpVersion);
+# endif
+					msg(buf);
+				}
+#endif
 				break;
 
 		case CMD_winsize:					/* obsolete command */
@@ -1779,6 +2074,20 @@ doabbr:
 				skipspace(&arg);
 				line2 = getdigits(&arg);
 				set_winsize((int)line1, (int)line2, TRUE);
+#ifdef NT
+				{
+					char_u		buf[32];
+					char_u		*s;
+
+					sprintf(buf, "%d,%d", Columns, Rows);
+					s = strsave(buf);
+					if (s != NULL)
+					{
+						free(p_win);
+						p_win = s;
+					}
+				}
+#endif
 				break;
 
 		case CMD_delete:
@@ -1918,20 +2227,32 @@ doabbr:
 						arg = (char_u *)EXRC_FILE;
 #ifdef UNIX
 						/* with Unix it is possible to open a directory */
+# ifdef KANJI
+					if (isdir(fileconvsto(arg)) == TRUE)
+# else
 					if (isdir(arg) == TRUE)
+# endif
 					{
 						EMSG2("\"%s\" is a directory", arg);
 						break;
 					}
 #endif
+#ifdef KANJI
+					if (!forceit && (fd = fopen(fileconvsto(arg), "r")) != NULL)
+#else
 					if (!forceit && (fd = fopen((char *)arg, "r")) != NULL)
+#endif
 					{
 						fclose(fd);
 						EMSG2("\"%s\" exists (use ! to override)", arg);
 						break;
 					}
 
+#ifdef KANJI
+					if ((fd = fopen(fileconvsto(arg), "w")) == NULL)
+#else
 					if ((fd = fopen((char *)arg, "w")) == NULL)
+#endif
 					{
 						EMSG2("Cannot open \"%s\" for writing", arg);
 						break;
@@ -2104,12 +2425,20 @@ dowrite(fname, append)
 	/*
 	 * write to other file or b_notedited set: overwriting only allowed with '!'
 	 */
+#ifdef KANJI
+	if ((other || curbuf->b_notedited) && !forceit && !append && !p_wa && (fd = fopen(fileconvsto(fname), "r")) != NULL)
+#else
 	if ((other || curbuf->b_notedited) && !forceit && !append && !p_wa && (fd = fopen((char *)fname, "r")) != NULL)
+#endif
 	{								/* don't overwrite existing file */
 		fclose(fd);
 #ifdef UNIX
 			/* with UNIX it is possible to open a directory */
+# ifdef KANJI
+		if (isdir(fileconvsto(fname)) == TRUE)
+# else
 		if (isdir(fname) == TRUE)
+# endif
 			EMSG2("\"%s\" is a directory", fname);
 		else
 #endif
@@ -2241,6 +2570,26 @@ doecmd(fname, sfname, command, hide, newlnum)
 		curbuf->b_endop.lnum = 0;
 	}
 
+#ifdef KANJI
+	if (!oldbuf && !other_file && forceit)
+	{
+		char_u	code = *curbuf->b_p_jc;
+		int		ubig = curbuf->b_p_ubig;
+# ifdef FEXRC
+		int		fexrc = p_fexrc;
+		p_fexrc = FALSE;
+# endif
+
+		*curbuf->b_p_jc = tolower(*curbuf->b_p_jc);
+		(void)open_buffer();
+		*curbuf->b_p_jc = code;
+		curbuf->b_p_ubig= ubig;
+# ifdef FEXRC
+		p_fexrc = fexrc;
+# endif
+	}
+	else
+#endif
 	if (!oldbuf)						/* need to read the file */
 		(void)open_buffer();
 	win_init(curwin);
@@ -2262,6 +2611,10 @@ doecmd(fname, sfname, command, hide, newlnum)
 
 	if (command != NULL)
 		docmdline(command);
+#if defined(NT) && defined(USE_HISTORY)
+	else if (newlnum == 0 && (fname = win_history_line(curbuf)) != NULL)
+		docmdline(fname);
+#endif
 	--RedrawingDisabled;
 	if (!skip_redraw)
 		updateScreen(CURSUPD);			/* redraw now */
@@ -2296,7 +2649,7 @@ getargcmd(argp)
 		}
 		if (*arg)
 			*arg++ = NUL;	/* terminate command with NUL */
-		
+
 		skipspace(&arg);	/* skip over spaces */
 		*argp = arg;
 	}
@@ -2315,6 +2668,11 @@ checknextcomm(arg)
 
 	for (p = arg; *p; ++p)
 	{
+#ifdef KANJI
+		if (ISkanji(*p))
+			p++;
+		else
+#endif
 		if (*p == '\\' && p[1])
 			++p;
 		else if (*p == '|' || *p == '\n')
@@ -2339,20 +2697,34 @@ domake(arg)
 	}
 	if (curbuf->b_changed)
 		(void)autowrite(curbuf);
+#ifdef KANJI
+	remove(fileconvsto(p_ef));
+#else
 	remove((char *)p_ef);
+#endif
 	outchar(':');
 	outstr(arg);		/* show what we are doing */
 	sprintf((char *)IObuff, "%s %s %s", arg, p_sp, p_ef);
+#ifdef NT
+	DoMake = TRUE;
+#endif
 	doshell(IObuff);
+#ifdef NT
+	DoMake = FALSE;
+#endif
 #ifdef AMIGA
 	flushbuf();
 	vpeekc();		/* read window status report and redraw before message */
 #endif
 	(void)qf_init();
+#ifdef KANJI
+	remove(fileconvsto(p_ef));
+#else
 	remove((char *)p_ef);
+#endif
 }
 
-/* 
+/*
  * Redefine the argument list to 'str'.
  *
  * Return FAIL for failure, OK otherwise.
@@ -2395,6 +2767,14 @@ doarglist(str)
 			 * for MSDOS a backslash is part of a file name.
 			 * Only skip ", space and tab.
 			 */
+#ifdef KANJI
+			if (ISkanji(*str))
+			{
+				*p++ = *str++;
+				*p++ = *str;
+			}
+			else
+#endif
 #ifdef MSDOS
 			if (*str == '\\' && (str[1] == '"' || str[1] == ' ' || str[1] == '\t'))
 #else
@@ -2414,8 +2794,30 @@ doarglist(str)
 		skipspace(&str);
 		*p = NUL;
 	}
-	
+
+#ifdef KANJI
+	{
+		char_u	*	fname;
+		int			j;
+
+		for (j = 0; j < new_count; j++)
+		{
+			fname = fileconvsfrom(new_files[j]);
+			new_files[j] = strsave(fname);
+		}
+		i = ExpandWildCards(new_count, new_files, &exp_count, &exp_files, FALSE, TRUE);
+		for (j = 0; j < new_count; j++)
+			free(new_files[j]);
+		for (j = 0; j < exp_count; j++)
+		{
+			fname = fileconvsfrom(exp_files[j]);
+			free(exp_files[j]);
+			exp_files[j] = strsave(fname);
+		}
+	}
+#else
 	i = ExpandWildCards(new_count, new_files, &exp_count, &exp_files, FALSE, TRUE);
+#endif
 	free(new_files);
 	if (i == FAIL)
 		return FAIL;
@@ -2697,6 +3099,7 @@ nextwild(buff, type)
 #endif /* WEBB_COMPLETE */
 				STRNCPY(&buff[i], p2, STRLEN(p2));
 				cmdlen += difflen;
+
 				cmdpos += difflen;
 			}
 			free(p2);
@@ -2795,7 +3198,26 @@ ExpandOne(str, list_notfound, mode)
 				emsg(e_nomatch);
 		}
 #else
+# ifdef KANJI
+		{
+			char_u	*	fname = fileconvsto(str);
+
+			len = ExpandWildCards(1, (char_u **)&fname,
+							&cmd_numfiles, &cmd_files, FALSE, list_notfound);
+			if (len != FAIL)
+			{
+				for (i = 0; i < cmd_numfiles; i++)
+				{
+					fname = fileconvsfrom(cmd_files[i]);
+					free(cmd_files[i]);
+					cmd_files[i] = strsave(fname);
+				}
+			}
+		}
+		if (len == FAIL)
+# else
 		if (ExpandWildCards(1, (char_u **)&str, &cmd_numfiles, &cmd_files, FALSE, list_notfound) == FAIL)
+# endif
 			/* error: do nothing */;
 		else if (cmd_numfiles == 0)
 			emsg(e_nomatch);
@@ -2815,8 +3237,13 @@ ExpandOne(str, list_notfound, mode)
 							if ((nextsetsuf = STRCHR(setsuf + 1, '.')) == NULL)
 								nextsetsuf = setsuf + STRLEN(setsuf);
 							setsuflen = (int)(nextsetsuf - setsuf);
+#ifdef MSDOS
+							if (filesuflen == setsuflen &&
+										vim_strnicmp(setsuf, filesuf, (size_t)setsuflen) == 0)
+#else
 							if (filesuflen == setsuflen &&
 										STRNCMP(setsuf, filesuf, (size_t)setsuflen) == 0)
+#endif
 								break;
 						}
 						if (*setsuf)				/* suffix matched: ignore file */
@@ -2969,8 +3396,24 @@ showmatches(file, len)
 		files_found = (char_u **)"";
 	}
 #else
+# ifdef KANJI
+	{
+		char_u	*	fname = fileconvsto(file_str);
+
+		if (ExpandWildCards(1, &fname, &num_files, &files_found, FALSE, FALSE)
+																	== FAIL)
+			return FAIL;
+		for (i = 0; i < num_files; i++)
+		{
+			fname = fileconvsfrom(files_found[i]);
+			free(files_found[i]);
+			files_found[i] = strsave(fname);
+		}
+	}
+# else
 	if (ExpandWildCards(1, &file_str, &num_files, &files_found, FALSE, FALSE) == FAIL)
 		return;
+# endif
 #endif /* WEBB_COMPLETE */
 
 	/* find the maximum length of the file names */
@@ -3001,11 +3444,19 @@ showmatches(file, len)
 					msg_outchar(' ');
 #ifdef WEBB_COMPLETE
 			if (expand_context == EXPAND_FILES)
+# ifdef KANJI
+				j = isdir(fileconvsto(files_found[k]));	/* highlight directories */
+# else
 				j = isdir(files_found[k]);	/* highlight directories */
+# endif
 			else
 				j = FALSE;
 #else
+# ifdef KANJI
+			j = isdir(fileconvsto(files_found[k]));	/* highlight directories */
+# else
 			j = isdir(files_found[k]);	/* highlight directories */
+# endif
 #endif /* WEBB_COMPLETE */
 			if (j)
 			{
@@ -3089,7 +3540,7 @@ addstar(fname, len)
 			fname[j] = NUL;
 			if (gettail(fname)[0] != '~')
 			{
-#ifdef MSDOS
+#if defined(MSDOS) && !defined(XARGS)
 			/*
 			 * if there is no dot in the file name, add "*.*" instead of "*".
 			 */
@@ -3109,7 +3560,7 @@ addstar(fname, len)
 		}
 	}
 #else /* WEBB_COMPLETE */
-#ifdef MSDOS
+#if defined(MSDOS) && !defined(XARGS)
 	int		i;
 #endif
 
@@ -3117,7 +3568,7 @@ addstar(fname, len)
 	if (retval != NULL)
 	{
 		STRNCPY(retval, fname, (size_t)len);
-#ifdef MSDOS
+#if defined(MSDOS) && !defined(XARGS)
 	/*
 	 * if there is no dot in the file name, add "*.*" instead of "*".
 	 */
@@ -3153,10 +3604,87 @@ dosource(fname)
 #ifdef MSDOS
 	int				error = FALSE;
 #endif
+#if defined(KANJI) || defined(FEXRC)
+	char_u			*p;
+#endif
+#ifdef FEXRC
+	int				do_fexrc = FALSE;
+	char_u		*	dotp = NULL;
+	char_u		*	q;
+#endif
 
 	expand_env(fname, NameBuff, MAXPATHL);		/* use NameBuff for expanded name */
+#ifdef KANJI
+	if ((p = gettail(NameBuff)) != NULL
+			&& (STRCMP(p, VIMRC_FILE) == 0
+					|| (STRNCMP(p, VIMRC_FILE, STRLEN(VIMRC_FILE)) == 0
+										&& p[STRLEN(VIMRC_FILE)] == '.')))
+	{
+		memmove(p + 2, p + 1, strlen(p));
+		p[1] = 'j';
+		if ((fp = fopen(fileconvsto(NameBuff), READBIN)) != NULL)
+			;
+# ifdef NT
+		else if (p[0] == '_')
+		{
+			p[0] = '.';
+			fp = fopen(fileconvsto(NameBuff), READBIN);
+		}
+# endif
+		if (fp == NULL)
+		{
+			expand_env(fname, NameBuff, MAXPATHL);
+			if ((fp = fopen(fileconvsto(NameBuff), READBIN)) != NULL)
+				;
+# ifdef NT
+			else if (p[0] == '_')
+			{
+				*p = '.';
+				fp = fopen(fileconvsto(NameBuff), READBIN);
+			}
+# endif
+		}
+		if (fp == NULL)
+			return FAIL;
+	}
+# ifdef DEFVIMRC_FILE
+	else if ((p = gettail(NameBuff)) != NULL
+									&& STRCMP(fname, DEFVIMRC_FILE) == 0)
+	{
+		memmove(p + 1, p, strlen(p) + 1);
+		p[0] = 'j';
+		if ((fp = fopen(fileconvsto(NameBuff), READBIN)) == NULL)
+		{
+			expand_env(fname, NameBuff, MAXPATHL);
+			fp = fopen(fileconvsto(NameBuff), READBIN);
+		}
+		if (fp == NULL)
+			return FAIL;
+	}
+# endif
+	else if ((fp = fopen(fileconvsto(NameBuff), READBIN)) == NULL)
+		return FAIL;
+#else
 	if ((fp = fopen((char *)NameBuff, READBIN)) == NULL)
 		return FAIL;
+#endif
+#ifdef FEXRC
+	if (p_fexrc && curbuf->b_filename != NULL)
+	{
+		STRCPY(NameBuff, curbuf->b_filename);
+		q = NameBuff;
+		while (*q)
+		{
+			if (*q == '.')
+				dotp = q;
+# ifdef KANJI
+			else if (ISkanji(*q))
+				q++;
+# endif
+			q++;
+		}
+	}
+#endif
 
 	++dont_sleep;			/* don't call sleep() in emsg() */
 	len = 0;
@@ -3184,6 +3712,89 @@ dosource(fname)
 			IObuff[len] = NUL;
 		}
 		breakcheck();		/* check for ^C here, so recursive :so will be broken */
+#ifdef KANJI
+		if (len >= 2)
+		{
+			char		tmp[IOSIZE];
+			int			w_jkc = p_jkc;
+
+			p_jkc = FALSE;
+			len = kanjiconvsfrom(IObuff, len, tmp, IOSIZE, NULL, JP_SYS, NULL);
+			tmp[len] = NUL;
+			STRCPY(IObuff, tmp);
+			p_jkc = w_jkc;
+		}
+#endif
+#ifdef FEXRC
+		if (p_fexrc && IObuff[0] == '"' && IObuff[1] != '"')
+		{
+			p = &IObuff[1];
+			skipspace(&p);
+			if (!do_fexrc && dotp
+					&& (STRNCMP(p, "begin", strlen("begin")) == 0)
+					&& ((q = strstr(IObuff, "begin")) != NULL)
+					&& ((q = strstr(q, "suffixes")) != NULL))
+			{
+				char_u		c;
+
+				while (*q && (q = STRCHR(q, '.')) != NULL)
+				{
+					c = q[STRLEN(dotp)];
+# ifdef MSDOS
+					if ((c == NUL || c == '.' || c == ' ' || c == '\t')
+							&& vim_strnicmp(dotp, q, (size_t)STRLEN(dotp)) == 0)
+# else
+					if ((c == NUL || c == '.' || c == ' ' || c == '\t')
+										&& STRNCMP(dotp, q, STRLEN(dotp)) == 0)
+# endif
+					{
+						do_fexrc = TRUE;
+						break;
+					}
+					q++;
+				}
+			}
+			else if (do_fexrc && dotp
+					&& (STRNCMP(p, "end", strlen("end")) == 0)
+					&& ((q = strstr(IObuff, "end")) != NULL)
+					&& ((q = strstr(q, "suffixes")) != NULL))
+				do_fexrc = FALSE;
+			else if (!do_fexrc
+					&& curbuf->b_filename != NULL
+					&& (STRNCMP(p, "begin", strlen("begin")) == 0)
+					&& ((q = strstr(IObuff, "begin")) != NULL)
+					&& ((q = strstr(q, "files")) != NULL))
+			{
+				char_u		c;
+				char_u		fc = '=';
+
+				while (*q && (q = STRCHR(q, fc)) != NULL)
+				{
+					q++;
+					c = q[STRLEN(gettail(NameBuff))];
+# ifdef MSDOS
+					if ((c == NUL || c == ';' || c == ' ' || c == '\t')
+							&& vim_strnicmp(gettail(NameBuff), q, (size_t)STRLEN(gettail(NameBuff))) == 0)
+# else
+					if ((c == NUL || c == ';' || c == ' ' || c == '\t')
+										&& STRNCMP(gettail(NameBuff), q, STRLEN(gettail(NameBuff))) == 0)
+# endif
+					{
+						do_fexrc = TRUE;
+						break;
+					}
+					fc = ';';
+				}
+			}
+			else if (do_fexrc
+					&& (STRNCMP(p, "end", strlen("end")) == 0)
+					&& ((q = strstr(IObuff, "end")) != NULL)
+					&& ((q = strstr(q, "files")) != NULL))
+				do_fexrc = FALSE;
+			else if (do_fexrc)
+				memmove(IObuff, IObuff + 1, len);
+		}
+#endif
 		docmdline(IObuff);
 		len = 0;
 	}
@@ -3252,7 +3863,7 @@ get_address(ptr)
 						if (dosearch(c, cmd, FALSE, (long)1, FALSE, TRUE))
 							lnum = curwin->w_cursor.lnum;
 						curwin->w_cursor = pos;
-				
+
 						cmd += searchcmdlen;	/* adjust command string pointer */
 						break;
 
@@ -3260,7 +3871,7 @@ get_address(ptr)
 						if (isdigit(*cmd))				/* absolute line number */
 							lnum = getdigits(&cmd);
 		}
-		
+
 		while (*cmd == '-' || *cmd == '+')
 		{
 			if (lnum == MAXLNUM)
@@ -3268,7 +3879,7 @@ get_address(ptr)
 			i = *cmd++;
 			if (!isdigit(*cmd))	/* '+' is '+1', but '+0' is not '+1' */
 				n = 1;
-			else 
+			else
 				n = getdigits(&cmd);
 			if (i == '-')
 				lnum -= n;
@@ -3406,7 +4017,7 @@ set_one_cmd_context(firstc, buff)
 						++cmd;
 					break;
 			}
-			
+
 			while (*cmd == '-' || *cmd == '+')
 			{
 				cmd++;
@@ -3568,6 +4179,49 @@ set_one_cmd_context(firstc, buff)
 
 	if (argt & XFILE)
 		expand_context = EXPAND_FILES;
+#ifdef NT
+	if (argt & XFILE)
+	{
+		if (p == arg)
+			;
+		else
+		{
+			int			j;
+			int			first = TRUE;
+
+			STRCPY(IObuff, arg);
+			p = &IObuff[strlen(IObuff)];
+			for (j = strlen(IObuff); j >= 0; j--)
+			{
+# ifdef KANJI
+				if ((IObuff[j] == ' ' || IObuff[j] == TAB)
+								&& isdir(fileconvsto(&IObuff[j + 1])) == OK)
+# else
+				if ((IObuff[j] == ' ' || IObuff[j] == TAB)
+											&& isdir(&IObuff[j + 1]) == OK)
+# endif
+				{
+					expand_pattern = arg + j + 1;
+					if (!(argt & NOSPC))
+						break;
+				}
+				if ((IObuff[j] == '/' || IObuff[j] == '\\') && first == TRUE)
+				{
+					IObuff[j] = NUL;
+					first = FALSE;
+				}
+			}
+# ifdef KANJI
+			if (j <= 0 && (IObuff[0] != ' ' && IObuff[0] != TAB)
+										&& isdir(fileconvsto(&IObuff[0])) == OK)
+# else
+			if (j <= 0 && (IObuff[0] != ' ' && IObuff[0] != TAB)
+											&& isdir(&IObuff[0]) == OK)
+# endif
+				expand_pattern = arg;
+		}
+	}
+#endif
 
 /*
  * 6. switch on command name
@@ -3590,6 +4244,11 @@ set_one_cmd_context(firstc, buff)
 		case CMD_visual:
 			for (p = arg; *p; ++p)
 			{
+#ifdef KANJI
+				if (ISkanji(*p))
+					p += 2;
+				else
+#endif
 				if (*p == '\\' && p[1])
 					++p;
 				else if (*p == '|' || *p == '\n')
@@ -3604,6 +4263,13 @@ set_one_cmd_context(firstc, buff)
 
 			while (arg[0] != NUL && arg[0] != delim)
 			{
+#ifdef KANJI
+				if (ISkanji(arg[0]))
+					++arg;
+				else if (arg[0] == '\\' && arg[1] != NUL && ISkanji(arg[1]))
+					arg += 2;
+				else
+#endif
 				if (arg[0] == '\\' && arg[1] != NUL)
 					++arg;
 				++arg;
@@ -3619,6 +4285,13 @@ set_one_cmd_context(firstc, buff)
 			for (i = 0; i < 2; i++, arg++)
 				while (arg[0] != NUL && arg[0] != delim)
 				{
+#ifdef KANJI
+					if (ISkanji(arg[0]))
+						++arg;
+					else if (arg[0] == '\\' && arg[1] != NUL && ISkanji(arg[1]))
+						arg += 2;
+					else
+#endif
 					if (arg[0] == '\\' && arg[1] != NUL)
 						++arg;
 					++arg;
@@ -3660,15 +4333,51 @@ ExpandFromContext(pat, num_file, file, files_only, list_notfound)
 	int		i;
 
 	if (!expand_interactively || expand_context == EXPAND_FILES)
+#ifdef KANJI
+	{
+		char_u	*	fname = fileconvsto(pat);
+
+		ret = ExpandWildCards(1, &fname, num_file, file, files_only, list_notfound);
+		if (ret != FAIL)
+		{
+			for (i = 0; i < *num_file; i++)
+			{
+				fname = fileconvsfrom((*file)[i]);
+				free((*file)[i]);
+				(*file)[i] = strsave(fname);
+			}
+		}
+		return(ret);
+	}
+#else
 		return ExpandWildCards(1, &pat, num_file, file, files_only, list_notfound);
+#endif
 	else if (expand_context == EXPAND_DIRECTORIES)
 	{
+#ifdef KANJI
+		char_u	*	fname = fileconvsto(pat);
+
+		if (ExpandWildCards(1, &fname, num_file, file, files_only, list_notfound)
+																	== FAIL)
+			return FAIL;
+		for (i = 0; i < *num_file; i++)
+		{
+			fname = fileconvsfrom((*file)[i]);
+			free((*file)[i]);
+			(*file)[i] = strsave(fname);
+		}
+#else
 		if (ExpandWildCards(1, &pat, num_file, file, files_only, list_notfound)
 																	== FAIL)
 			return FAIL;
+#endif
 		count = 0;
 		for (i = 0; i < *num_file; i++)
+#ifdef KANJI
+			if (isdir(fileconvsto((*file)[i])))
+#else
 			if (isdir((*file)[i]))
+#endif
 				(*file)[count++] = (*file)[i];
 			else
 				free((*file)[i]);
@@ -3716,7 +4425,7 @@ ExpandFromContext(pat, num_file, file, files_only, list_notfound)
 		ret = ExpandTags(prog, num_file, file);
 	else
 		ret = FAIL;
-	
+
 	free(prog);
 	return ret;
 }

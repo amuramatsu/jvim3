@@ -195,6 +195,19 @@ do_window(nchar, Prenum)
 					free(ptr);
 				}
 				break;
+#ifdef NT
+/* edit file name under cursor in a new window */
+	case 'z':
+	case Ctrl('Z'):
+				if (!wincmd_togle())
+					beep();
+				break;
+	case 'a':
+	case Ctrl('A'):
+				if (!wincmd_rotate())
+					beep();
+				break;
+#endif
 
 	default:	beep();
 				break;
@@ -222,7 +235,7 @@ win_split(new_height, redraw)
 	int			do_equal = (p_ea && new_height == 0);
 	int			needed;
 	int			available;
-	
+
 		/* add a status line when p_ls == 1 and splitting the first window */
 	if (lastwin == firstwin && p_ls == 1 && curwin->w_status_height == 0)
 		need_status = STATUS_HEIGHT;
@@ -551,7 +564,7 @@ win_equal(next_curwin, redraw)
 	}
 	else
 		less = 0;
-		
+
 
 /*
  * spread the available lines over the windows
@@ -1157,7 +1170,11 @@ file_name_at_cursor()
 	{
 		if ((file_name = strsave(NameBuff)) == NULL)
 			return NULL;
+#ifdef KANJI
+		if (getperm(fileconvsto(file_name)) >= 0)
+#else
 		if (getperm(file_name) >= 0)
+#endif
 			return file_name;
 	}
 	else							/* relative path, use 'path' option */
@@ -1183,7 +1200,11 @@ file_name_at_cursor()
 					file_name[len] = '/';
 				STRCPY(file_name + len + 1, NameBuff);
 			}
+#ifdef KANJI
+			if (getperm(fileconvsto(file_name)) >= 0)
+#else
 			if (getperm(file_name) >= 0)
+#endif
 				return file_name;
 			dir += len;
 		}

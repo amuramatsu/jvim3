@@ -14,6 +14,9 @@
 #include "globals.h"
 #include "proto.h"
 #include "param.h"
+#ifdef KANJI
+#include "kanji.h"
+#endif
 
 static void check_status __ARGS((BUF *));
 
@@ -62,12 +65,20 @@ set_indent(size, delete)
 	if (!curbuf->b_p_et)			/* if 'expandtab' is set, don't use TABs */
 		while (size >= (int)curbuf->b_p_ts)
 		{
+#ifdef KANJI
+			inschar(TAB, NUL);
+#else
 			inschar(TAB);
+#endif
 			size -= (int)curbuf->b_p_ts;
 		}
 	while (size)
 	{
+#ifdef KANJI
+		inschar(' ', NUL);
+#else
 		inschar(' ');
+#endif
 		--size;
 	}
 	State = oldstate;
@@ -127,9 +138,32 @@ Opencmd(dir, redraw, delspaces)
 			if (dir == FORWARD)
 			{
 				p = ptr + STRLEN(ptr) - 1;
+#ifdef KANJI
+				while (p > ptr)
+				{
+					switch (ISkanjiPointer(ptr,p))
+					{
+						case 0:
+							if (!isspace(*p))
+								goto end_while;
+							p--;
+							break;
+						case 2:
+							p -= 2;
+							break;
+						/* ??? */
+						case 1:
+							p--;
+							break;
+					}
+				}
+end_while:
+				if (ISkanjiPointer(ptr,p) == 0 && *p == '{')					/* line ends in '{': do indent */
+#else
 				while (p > ptr && isspace(*p))	/* find last non-blank in line */
 					--p;
 				if (*p == '{')					/* line ends in '{': do indent */
+#endif
 				{
 					did_si = TRUE;
 					no_si = TRUE;
@@ -265,7 +299,7 @@ plines(p)
 {
 	return plines_win(curwin, p);
 }
-	
+
 	int
 plines_win(wp, p)
 	WIN			*wp;
@@ -282,21 +316,63 @@ plines_win(wp, p)
 	if (*s == NUL)				/* empty line */
 		return 1;
 
+#ifdef KANJI
+	{
+		int	i = wp->w_p_nu ? 8 : 0,
+			j, kanji= 0;
+		for (col = i; *s != NUL; s++)
+		{
+			if (kanji)
+			{
+				kanji= 0;
+				i++;
+				col++;
+			}
+			else
+			{
+				if (ISkanji(*s))
+				{
+					kanji = 1;
+					i++;
+					col++;
+					if (i >= Columns)
+					{
+						i = 1;
+						col++;	/* dummy byte */
+					}
+					continue;
+				}
+				j = chartabsize(*s, i);
+				col += j;
+				i += j;
+			}
+			if (i >= Columns)
+				i = 0;
+		}
+	}
+#else
 	while (*s != NUL)
 		col += chartabsize(*s++, col);
+#endif
 
 	/*
 	 * If list mode is on, then the '$' at the end of the line takes up one
 	 * extra column.
 	 */
+#ifdef CRMARK
+	if (wp->w_p_list || wp->w_p_cr)
+#else
 	if (wp->w_p_list)
+#endif
 		col += 1;
 
+#ifndef KANJI
 	/*
 	 * If 'number' mode is on, add another 8.
 	 */
 	if (wp->w_p_nu)
 		col += 8;
+#endif
 
 	lines = (col + (Columns - 1)) / Columns;
 	if (lines <= wp->w_height)
@@ -330,8 +406,14 @@ plines_m_win(wp, first, last)
  * insert or replace a single character at the cursor position
  */
 	void
+#ifdef KANJI
+inschar(c, k)
+	int			c;
+	int			k;
+#else
 inschar(c)
 	int			c;
+#endif
 {
 	register char_u  *p;
 	int				rir0;		/* reverse replace in column 0 */
@@ -344,6 +426,10 @@ inschar(c)
 
 	old = ml_get(lnum);
 	oldlen = STRLEN(old) + 1;
+#if defined(KANJI) && defined(NT) && defined(SYNTAX)
+	if (curwin->w_p_syt && GuiWin)
+		syn_inschar(old, col);
+#endif
 
 	rir0 = (State == REPLACE && p_ri && col == 0);
 	if (rir0 || State != REPLACE || *(old + col) == NUL)
@@ -351,19 +437,66 @@ inschar(c)
 	else
 		extra = 0;
 
+#ifdef KANJI
+	if (ISkanji(c) &&
+		(State != REPLACE || *(old + col) == NUL || (rir0 && !ISkanji(*(old + col)))))
+		extra = 2;
+	else if (State == REPLACE && ISkanji(c) && !ISkanji(gchar_cursor()))
+		extra = 1;
+#endif
 	new = alloc((unsigned)(oldlen + extra));
 	if (new == NULL)
 		return;
 	memmove((char *)new, (char *)old, (size_t)col);
 	p = new + col;
+#ifdef KANJI
+	new[oldlen + extra - 1] = NUL;
+	if (!p_jrep && State == REPLACE && !ISkanji(c) && ISkanji(gchar_cursor()))
+	{
+		memmove((char *)p, (char *)old + col, (size_t)(oldlen - col));
+		if (rir0)					/* reverse replace in column 0 */
+			*(p + 2) = ' ';
+		else
+			*(p + 1) = ' ';
+	}
+	else if (!p_jrep && State == REPLACE && ISkanji(c) && !ISkanji(gchar_cursor()))
+	{
+		if (gchar_cursor() == NUL)
+		{
+			memmove((char *)p + 2, (char *)old + col, (size_t)(oldlen - col));
+		}
+		else
+		{
+			memmove((char *)p, (char *)old + col, (size_t)(oldlen - col));
+			if (ISkanji(*(ml_get_cursor()+1)))
+			{
+				if (rir0)					/* reverse replace in column 0 */
+					*(p + 3) = ' ';
+				else
+					*(p + 2) = ' ';
+			}
+		}
+	}
+	else if (State == REPLACE && !ISkanji(c) && ISkanji(gchar_cursor()))
+		memmove((char *)p, (char *)old + col + 1, (size_t)(oldlen - col - 1));
+	else
+#endif
 	memmove((char *)p + extra, (char *)old + col, (size_t)(oldlen - col));
 	if (rir0)					/* reverse replace in column 0 */
 	{
 		*(p + 1) = c;			/* replace the char that was in column 0 */
+#ifdef KANJI
+		if (ISkanji(c))
+			*(p + 2) = k;
+#endif
 		c = ' ';				/* insert a space */
 		extraspace = TRUE;
 	}
 	*p = c;
+#ifdef KANJI
+	if (ISkanji(c))
+		*(p + 1) = k;
+#endif
 	ml_replace(lnum, new, FALSE);
 
 	/*
@@ -393,10 +526,25 @@ inschar(c)
 			cursupdate();
 		}
 	}
+#ifdef KANJI
+	if (!p_ri)							/* normal insert: cursor right */
+		curwin->w_cursor.col += (ISkanji(c) ? 2 : 1);
+	else if (State == REPLACE && !rir0)	/* reverse replace mode: cursor left */
+	{
+		--curwin->w_cursor.col;
+		if (ISkanji(gchar_cursor()))
+			--curwin->w_cursor.col;
+	}
+#else
 	if (!p_ri)							/* normal insert: cursor right */
 		++curwin->w_cursor.col;
 	else if (State == REPLACE && !rir0)	/* reverse replace mode: cursor left */
 		--curwin->w_cursor.col;
+#endif
+#if defined(KANJI) && defined(NT) && defined(SYNTAX)
+	if (curwin->w_p_syt && GuiWin)
+		syn_inschar(new, col);
+#endif
 	CHANGED;
 }
 
@@ -443,6 +591,10 @@ delchar(fixpos)
 
 	old = ml_get(lnum);
 	oldlen = STRLEN(old);
+#if defined(KANJI) && defined(NT) && defined(SYNTAX)
+	if (curwin->w_p_syt && GuiWin)
+		syn_delchar(old, col);
+#endif
 
 	if (col >= oldlen)	/* can't do anything (happens with replace mode) */
 		return FAIL;
@@ -470,7 +622,15 @@ delchar(fixpos)
 	 * want to end up positioned at the newline.
 	 */
 	if (fixpos && curwin->w_cursor.col > 0 && col == oldlen - 1)
+#ifdef KANJI
+	{
 		--curwin->w_cursor.col;
+		if (ISkanjiCur() == 2)
+			--curwin->w_cursor.col;
+	}
+#else
+		--curwin->w_cursor.col;
+#endif
 
 	CHANGED;
 	return OK;
@@ -584,9 +744,21 @@ skipspace(pp)
 	char_u **pp;
 {
     register char_u *p;
-    
+
+#ifdef KANJI
+    for(p = *pp; *p; ++p)
+	{
+		if (*p == ' ' || *p == '\t')
+			continue;
+		if (ISkanji(*p) && jpcls(*p, *(p+1)) == 0)
+			++ p;
+		else
+			break;
+	}
+#else
     for (p = *pp; *p == ' ' || *p == '\t'; ++p)	/* skip to next non-white */
     	;
+#endif
     *pp = p;
 }
 
@@ -602,7 +774,16 @@ skiptospace(pp)
 	register char_u *p;
 
 	for (p = *pp; *p != ' ' && *p != '\t' && *p != NUL; ++p)
+#ifdef KANJI
+		if (ISkanji(*p))
+		{
+			if (jpcls(*p, *(p + 1)) == 0)
+				break;
+			++p;
+		}
+#else
 		;
+#endif
 	*pp = p;
 }
 
@@ -634,7 +815,7 @@ getdigits(pp)
 {
     register char_u *p;
 	long retval;
-    
+
 	p = *pp;
 	retval = atol((char *)p);
     while (isdigit(*p))	/* skip to next non-digit */
@@ -773,6 +954,9 @@ msgmore(n)
 	void
 beep()
 {
+#ifndef notdef
+	if (!Exec_reg)
+#endif
 	flush_buffers(FALSE);		/* flush internal buffers */
 	if (p_vb)
 	{
@@ -792,7 +976,7 @@ beep()
 	    outchar('\007');
 }
 
-/* 
+/*
  * Expand environment variable with path name.
  * "~/" is also expanded, like $HOME.
  * If anything fails no expansion is done and dst equals src.
@@ -836,6 +1020,11 @@ expand_env(src, dst, dstlen)
 		if (var && (STRLEN(var) + STRLEN(tail) + 1 < (unsigned)dstlen))
 		{
 			STRCPY(dst, var);
+#if !defined(notdef) && defined(MSDOS)
+			if (var[strlen(var) - 1] == '\\' && tail[0] == '\\')
+				STRCAT(dst, &tail[1]);
+			else
+#endif
 			STRCAT(dst, tail);
 			return;
 		}
@@ -843,7 +1032,7 @@ expand_env(src, dst, dstlen)
 	STRNCPY(dst, src, (size_t)dstlen);
 }
 
-/* 
+/*
  * Replace home directory by "~/"
  * If anything fails dst equals src.
  */
@@ -864,15 +1053,32 @@ home_replace(src, dst, dstlen)
 		STRNCPY(dst, src, (size_t)dstlen);
 	else
 	{
+#ifndef notdef
+		if (home[len - 1] == '\\' || home[len - 1] == '/')
+			len--;
+#endif
 		skipspace(&src);
 		while (*src && dstlen > 0)
 		{
+#ifndef notdef
+			if (strlen(src) > len && src[len] != '\\' && src[len] != '/')
+				;
+			else
+#endif
 			if (STRNCMP(src, home, len) == 0)
 			{
 				src += len;
 				if (--dstlen > 0)
 					*dst++ = '~';
 			}
+#ifdef MSDOS
+			else if (vim_strnicmp(src, home, len) == 0)
+			{
+				src += len;
+				if (--dstlen > 0)
+					*dst++ = '~';
+			}
+#endif
 			while (*src && *src != ' ' && --dstlen > 0)
 				*dst++ = *src++;
 			while (*src == ' ' && --dstlen > 0)
@@ -895,8 +1101,13 @@ fullpathcmp(s1, s2)
 	char_u buf1[MAXPATHL];
 
 	expand_env(s1, buf1, MAXPATHL);
+# ifdef KANJI
+	if (stat(fileconvsto(buf1), &st1) == 0 && stat(fileconvsto(s2), &st2) == 0 &&
+				st1.st_dev == st2.st_dev && st1.st_ino == st2.st_ino)
+# else
 	if (stat((char *)buf1, &st1) == 0 && stat((char *)s2, &st2) == 0 &&
 				st1.st_dev == st2.st_dev && st1.st_ino == st2.st_ino)
+# endif
 		return FALSE;
 	return TRUE;
 #else
@@ -904,7 +1115,11 @@ fullpathcmp(s1, s2)
 	char_u buf2[MAXPATHL];
 
 	expand_env(s1, buf2, MAXPATHL);
+#ifdef KANJI
+	if (FullName(fileconvsto(buf2), buf1, MAXPATHL) == OK && FullName(fileconvsto(s2), buf2, MAXPATHL) == OK)
+#else
 	if (FullName(buf2, buf1, MAXPATHL) == OK && FullName(s2, buf2, MAXPATHL) == OK)
+#endif
 		return STRCMP(buf1, buf2);
 	/*
 	 * one of the FullNames() failed, file probably doesn't exist.
@@ -926,6 +1141,10 @@ gettail(fname)
 	{
 		if (ispathsep(*p2))
 			p1 = p2 + 1;
+#if defined(KANJI) && defined(MSDOS)
+		if (ISkanji(*p2))
+			p2++;
+#endif
 	}
 	return p1;
 }

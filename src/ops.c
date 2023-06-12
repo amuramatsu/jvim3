@@ -16,6 +16,9 @@
 #include "proto.h"
 #include "param.h"
 #include "ops.h"
+#ifdef KANJI
+#include "kanji.h"
+#endif
 
 /*
  * We have one yank buffer for normal yanks and puts, nine yank buffers for
@@ -28,6 +31,9 @@ static struct yankbuf
 	linenr_t 	y_size; 		/* number of lines in y_array */
 	char_u		y_type; 		/* MLINE, MCHAR or MBLOCK */
 } y_buf[36];					/* 0..9 = number buffers, 10..35 = char buffers */
+#ifdef NT
+static struct	yankbuf	y_clip;			/* clipboard buffer */
+#endif
 
 static struct	yankbuf *y_current;		/* ptr to current yank buffer */
 static int		yankappend;				/* TRUE when appending */
@@ -38,6 +44,10 @@ static int		stuff_yank __ARGS((int, char_u *));
 static void		free_yank __ARGS((long));
 static void		free_yank_all __ARGS((void));
 static void		block_prep __ARGS((linenr_t, int));
+#ifdef NT
+static void		get_clip __ARGS((void));
+static void		put_clip __ARGS((void));
+#endif
 
 /* variables use by block_prep, dodelete and doyank */
 static int		startspaces;
@@ -83,6 +93,9 @@ doshift(op, curs_top, amount)
 		curwin->w_cursor.lnum -= nlines;
 	else
 		--curwin->w_cursor.lnum;		/* put cursor on last line, for ":>" */
+#ifndef notdef
+	beginline(TRUE);
+#endif
 	updateScreen(CURSUPD);
 
 	if (nlines > p_report)
@@ -147,6 +160,10 @@ is_yank_buffer(c, write)
 {
 	if (isalnum(c) || (!write && strchr(".%:", c) != NULL) || c == '"')
 		return TRUE;
+#ifdef NT
+	if (c == '@')
+		return TRUE;
+#endif
 	return FALSE;
 }
 
@@ -180,6 +197,15 @@ get_yank_buffer(writing)
 	}
 	else			/* not 0-9, a-z or A-Z: use buffer 0 */
 		i = 0;
+#ifdef NT
+	if (yankbuffer == '@')
+	{
+		if (!writing)
+			get_clip();
+		y_current = &y_clip;
+	}
+	else
+#endif
 	y_current = &(y_buf[i]);
 	if (writing)		/* remember the buffer we write into for doput() */
 		y_previous = y_current;
@@ -531,6 +557,9 @@ dodelete()
 			dellines(nlines, TRUE, TRUE);
 		}
 		u_clearline();	/* "U" command should not be possible after "dd" */
+#ifndef notdef		/* quick hack */
+		if (!(nlines > 1 && operator == CHANGE))
+#endif
 		beginline(TRUE);
 	}
 	else if (nlines == 1)		/* delete characters within one line */
@@ -653,6 +682,31 @@ swapchar(pos)
 	int		c;
 
 	c = gchar(pos);
+#ifdef KANJI
+	if (p_jt && ISkanji(c))
+	{
+		FPOS	pos2;
+		char_u	k;
+		char_u	c1, c2;
+
+		pos2.lnum = pos->lnum;
+		pos2.col  = pos->col + 1;
+
+		c1 = c;
+		c2 = k = gchar(&pos2);
+
+		jptocase(&c1, &c2, operator);
+		if (c1 != c || c2 != k)
+		{
+			pchar(*pos, c1);
+			pchar(pos2, c2);
+			CHANGED;
+		}
+	}
+	else if (ISkanji(c))
+		;
+	else
+#endif
 	if (islower(c) && operator != LOWER)
 	{
 		pchar(*pos, toupper(c));
@@ -692,6 +746,9 @@ init_yank()
 {
 		register int i;
 
+#ifdef NT
+		y_clip.y_array = NULL;
+#endif
 		for (i = 0; i < 36; ++i)
 				y_buf[i].y_array = NULL;
 }
@@ -827,6 +884,10 @@ doyank(deleting)
 			if (yanklines == 1)		/* startop and endop on same line */
 			{
 					j = curbuf->b_endop.col - curbuf->b_startop.col + 1 - !mincl;
+#ifdef KANJI
+					if (ISkanjiFpos(&curbuf->b_endop) == 2)
+						j++;
+#endif
 					if ((y_current->y_array[0] = strnsave(ml_get(lnum) + curbuf->b_startop.col, (int)j)) == NULL)
 					{
 	fail:
@@ -855,6 +916,10 @@ doyank(deleting)
 	}
 
 success:
+#ifdef NT
+	if (yankbuffer == '@')
+		put_clip();
+#endif
 	if (curr != y_current)		/* append the new block to the old block */
 	{
 		new_ptr = (char_u **)lalloc((long_u)(sizeof(char_u *) * (curr->y_size + y_current->y_size)), TRUE);
@@ -943,7 +1008,15 @@ doput(dir, count, fix_indent)
 
 	curbuf->b_startop = curwin->w_cursor;			/* default for "'[" command */
 	if (dir == FORWARD)
+#ifdef KANJI
+	{
 		curbuf->b_startop.col++;
+		if (ISkanjiFpos(&curbuf->b_startop) == 2)
+			curbuf->b_startop.col++;
+	}
+#else
+		curbuf->b_startop.col++;
+#endif
 	curbuf->b_endop = curwin->w_cursor;				/* default for "']" command */
 	commandchar = (dir == FORWARD ? (count == -1 ? 'o' : 'a') : (count == -1 ? 'O' : 'i'));
 	if (yankbuffer == '.')		/* use inserted text */
@@ -1042,6 +1115,15 @@ doput(dir, count, fix_indent)
 			for (ptr = old; vcol < col && *ptr; ++ptr)
 			{
 				/* Count a tab for what it's worth (if list mode not on) */
+#ifdef KANJI
+				if (ISkanji(*ptr))
+				{
+					incr = 2;
+					ptr ++;
+					textcol ++;
+				}
+				else
+#endif
 				incr = chartabsize(*ptr, (long)vcol);
 				vcol += incr;
 				++textcol;
@@ -1054,8 +1136,25 @@ doput(dir, count, fix_indent)
 			{
 				endspaces = vcol - col;
 				startspaces = incr - endspaces;
+#ifdef KANJI
+				if (ISkanjiPointer(old, ptr - 1) == 2)
+				{
+					/*	leave text */
+					endspaces = startspaces = 0;
+					/*	destroy text
+					textcol -= 2;
+					delchar = 2;
+					*/
+				}
+				else
+				{
+					--textcol;
+					delchar = 1;
+				}
+#else
 				--textcol;
 				delchar = 1;
+#endif
 			}
 			yanklen = STRLEN(y_array[i]);
 			totlen = count * yanklen + startspaces + endspaces;
@@ -1105,6 +1204,14 @@ doput(dir, count, fix_indent)
 				{
 					++curwin->w_cursor.col;
 					++curbuf->b_endop.col;
+#ifdef KANJI
+					if (ISkanjiCur() == 2)
+					{
+						++col;
+						++curwin->w_cursor.col;
+						++curbuf->b_endop.col;
+					}
+#endif
 				}
 			}
 			new_cursor = curwin->w_cursor;
@@ -1135,6 +1242,10 @@ doput(dir, count, fix_indent)
 				memmove((char *)ptr, (char *)old + col, STRLEN(old + col) + 1);
 				ml_replace(lnum, new, FALSE);
 				curwin->w_cursor.col += (colnr_t)(totlen - 1);	/* put cursor on last putted char */
+#ifdef KANJI
+				if (ISkanji(*(ptr - 1)))
+					curwin->w_cursor.col --;
+#endif
 			}
 			curbuf->b_endop = curwin->w_cursor;
 			updateline();
@@ -1224,6 +1335,13 @@ doput(dir, count, fix_indent)
 				else
 					curbuf->b_endop.col = 0;
 				curwin->w_cursor = new_cursor;
+#ifdef NT
+				{
+					extern int		restart_edit;	/* this is in edit.c */
+					if (restart_edit && y_current == &y_clip)
+						curbuf->b_endop.col = STRLEN(y_array[y_size]);
+				}
+#endif
 			}
 
 error:
@@ -1237,6 +1355,10 @@ error:
 			updateScreen(CURSUPD);
 		}
 	}
+#ifdef KANJI
+	if (ISkanjiCur() == 2)
+		curwin->w_cursor.col--;
+#endif
 
 	msgmore(nlines);
 	curwin->w_set_curswant = TRUE;
@@ -1256,7 +1378,11 @@ dodis()
 	gotocmdline(TRUE, NUL);
 
 	msg_outstr((char_u *)"--- Registers ---");
+#ifdef NT
+	for (i = -1; i < 37; ++i)
+#else
 	for (i = -1; i < 36; ++i)
+#endif
 	{
 		if (i == -1)
 		{
@@ -1265,6 +1391,13 @@ dodis()
 			else
 				yb = &(y_buf[0]);
 		}
+#ifdef NT
+		else if (i == 36)
+		{
+			get_clip();
+			yb = &y_clip;
+		}
+#endif
 		else
 			yb = &(y_buf[i]);
 		if (yb->y_array != NULL)
@@ -1277,6 +1410,10 @@ dodis()
 				msg_outchar('"');
 				if (i < 10)
 					msg_outchar(i + '0');
+#ifdef NT
+				else if (i == 36)
+					msg_outchar('@');
+#endif
 				else
 					msg_outchar(i + 'a' - 10);
 			}
@@ -1290,8 +1427,16 @@ dodis()
 					msg_outstr((char_u *)"^J");
 					n -= 2;
 				}
+#ifdef KANJI
+				p = yb->y_array[j];
+				if (STRLEN(p) < (int_u)n)
+					n -= msg_outtrans(p, -1);
+				else
+					n -= msg_outtrans(p, n);
+#else
 				for (p = yb->y_array[j]; *p && (n -= charsize(*p)) >= 0; ++p)
 					msg_outtrans(p, 1);
+#endif
 			}
 			flushbuf();				/* show one line at a time */
 		}
@@ -1339,9 +1484,21 @@ dis_msg(p, skip_esc)
 	int		n;
 
 	n = (int)Columns - 6;
+#ifdef KANJI
+	while (*p && !(*p == ESC && skip_esc && *(p + 1) == NUL) &&
+						(n -= ISkanji(*p) ? 2 : charsize(*p)) >= 0)
+		if (ISkanji(*p))
+		{
+			msg_outtrans(p, 2);
+			p += 2;
+		}
+		else
+			msg_outtrans(p++, 1);
+#else
 	while (*p && !(*p == ESC && skip_esc && *(p + 1) == NUL) &&
 						(n -= charsize(*p)) >= 0)
 		msg_outtrans(p++, 1);
+#endif
 }
 
 /*
@@ -1418,6 +1575,15 @@ dojoin(insert_space, redraw)
 				if (currsize > 1)
 					endcurr1 = endcurr2;
 			}
+#ifdef KANJI
+			if (ISkanji(*next) && ISkanjiPosition(curr, currsize) == 2)
+				spaces = 0;
+			else if (*next == NUL && ISkanjiPosition(curr, currsize) == 2)
+				spaces = 0;
+			else if (!p_jjs && (ISkanji(*next) || ISkanjiPosition(curr, currsize) == 2))
+				spaces = 0;
+			else
+#endif
 			if (p_js && strchr(".!?", endcurr1) != NULL)
 				spaces = 2;
 		}
@@ -1471,6 +1637,10 @@ dojoin(insert_space, redraw)
 	else
 	{
 		curwin->w_cursor.col = currsize - 1;
+#ifdef KANJI
+		if (ISkanjiCur() == 2)
+			curwin->w_cursor.col--;
+#endif
 		(void)oneright();
 	}
 	CHANGED;
@@ -1495,7 +1665,11 @@ doformat()
 
 		/* do the formatting */
 	State = INSERT;		/* for Opencmd() */
+#ifdef KANJI
+	insertchar(NUL, NUL);
+#else
 	insertchar(NUL);
+#endif
 	State = NORMAL;
 	updateScreen(NOT_VALID);
 }
@@ -1526,7 +1700,25 @@ startinsert(initstr, startln, count)
 		showmode();
 
 	change_warning();		/* give a warning if readonly */
+#ifdef FEPCTRL
+# if defined(CANNA) || defined(ONEW)
+	fep_visualmode(TRUE);
+# endif
+	if (curbuf->b_p_fc && curbuf->fepmode && !fep_get_mode())
+		fep_force_on();
+#endif
 	edit(count);
+#ifdef FEPCTRL
+	if (curbuf->b_p_fc)
+	{
+		curbuf->fepmode = fep_get_mode();
+		if (fep_get_mode())
+			fep_force_off();
+	}
+# if defined(CANNA) || defined(ONEW)
+	fep_visualmode(FALSE);
+# endif
+#endif
 }
 
 /*
@@ -1559,6 +1751,18 @@ block_prep(lnum, delete)
 	while (vcol < startvcol && *textstart)
 	{
 		/* Count a tab for what it's worth (if list mode not on) */
+#ifdef KANJI
+		if (ISkanji(*textstart))
+		{
+			incr = 2;
+			vcol += incr;
+			if (vcol > startvcol)
+				break;
+			textstart += incr;
+			textcol   += incr;
+			continue;
+		}
+#endif
 		incr = chartabsize(*textstart, (long)vcol);
 		vcol += incr;
 		++textstart;
@@ -1572,6 +1776,19 @@ block_prep(lnum, delete)
 	else /* vcol >= startvcol */
 	{
 		startspaces = vcol - startvcol;
+#ifdef KANJI
+		if (!delete && vcol > startvcol && ISkanji(*textstart))
+		{
+			startspaces = 0;
+			vcol -= incr;
+		}
+		else if (delete && vcol > startvcol && ISkanjiCol(lnum, textcol) == 1)
+		{
+			startspaces = 0;
+			vcol -= incr;
+		}
+		else
+#endif
 		if (delete && vcol > startvcol)
 			startspaces = incr - startspaces;
 		pend = textstart;
@@ -1586,6 +1803,15 @@ block_prep(lnum, delete)
 			while (vcol <= endvcol && *pend)
 			{
 				/* Count a tab for what it's worth (if list mode not on) */
+#ifdef KANJI
+				if (ISkanji(*pend))
+				{
+					incr = 2;
+					vcol += incr;
+					pend += incr;
+					continue;
+				}
+#endif
 				incr = chartabsize(*pend, (long)vcol);
 				vcol += incr;
 				++pend;
@@ -1598,6 +1824,11 @@ block_prep(lnum, delete)
 			{
 				endspaces = vcol - endvcol - 1;
 				if (!delete && pend != textstart && endspaces)
+#ifdef KANJI
+					if (ISkanjiPointer(textstart, pend - 1) == 2)
+						endspaces--;
+					else
+#endif
 					--pend;
 			}
 		}
@@ -1733,3 +1964,141 @@ doaddsub(command, Prenum1)
 		return FAIL;
 	}
 }
+
+#ifdef NT
+/*
+ * Windows Clipboard Interface function.
+ *					delete/yank command.
+ *	argument NULL is yank buffer size return.
+ *	other argument is copy yank buffer.
+ */
+int
+yank_to_clipboard(ptr)
+char_u			*ptr;
+{
+	int			i;
+	int			size	= 0;
+	int			col;
+
+	if (ptr == NULL)
+	{
+		for (i = 0; i < y_clip.y_size; i++)
+			size += STRLEN(y_clip.y_array[i]) + 2;
+		size += 1;
+	}
+	else
+	{
+		for (i = 0; i < y_clip.y_size; i++)
+		{
+			col = STRLEN(y_clip.y_array[i]);
+			memmove((char *)&ptr[size], (char *)y_clip.y_array[i], (size_t)col);
+			ptr[size + col + 0] = '\r';
+			ptr[size + col + 1] = '\n';
+			size = size + col + 2;
+		}
+		if (y_clip.y_type == MLINE)
+			ptr[size] = '\0';
+		else
+			ptr[size - 2] = '\0';
+	}
+	return(size);
+}
+
+static void
+get_clip()
+{
+	extern HWND			hVimWnd;
+	HANDLE				hClipData;
+	char			*	lpClipData;
+	char_u			*	p;
+	char_u			*	t;
+	struct yankbuf	*	curr = y_current;
+	long				yanklines = 1;
+	long				i;
+	long				size;
+
+	y_current = &y_clip;
+	if (OpenClipboard(hVimWnd))
+	{
+		if ((hClipData = GetClipboardData(CF_TEXT)) != NULL)
+		{
+			if ((lpClipData = GlobalLock(hClipData)) != NULL)
+			{
+				free_yank_all();
+				p = lpClipData;
+				while ((p = strstr(p, "\r\n")) != NULL)
+				{
+					yanklines++;
+					p += 2;
+				}
+				y_clip.y_size = yanklines;
+				if (lpClipData[strlen(lpClipData) - 2] == '\r'
+						&& lpClipData[strlen(lpClipData) - 1] == '\n')
+					y_clip.y_type = MLINE;	/* set the yank buffer type */
+				else
+					y_clip.y_type = MCHAR;	/* set the yank buffer type */
+				y_clip.y_array = (char_u **)lalloc((long_u)(sizeof(char_u *) * yanklines), TRUE);
+				if (y_clip.y_array == NULL)
+				{
+					GlobalUnlock(hClipData);
+					CloseClipboard();
+					y_current = curr;
+					return;
+				}
+
+				p = lpClipData;
+				for (i = 0; i < yanklines; i++)
+				{
+					t = strstr(p, "\r\n");
+					if (t == NULL)
+						size = strlen(p);
+					else
+						size = t - p;
+					if ((y_clip.y_array[i] = alloc(size + 1)) == NULL)
+					{
+						free_yank(i);	/* free the lines that we allocated */
+						break;
+					}
+					memcpy(y_clip.y_array[i], p, size);
+					y_clip.y_array[i][size] = NUL;
+					p = t + 2;
+				}
+				GlobalUnlock(hClipData);
+			}
+		}
+		CloseClipboard();
+	}
+	y_current = curr;
+}
+
+static void
+put_clip()
+{
+	extern HWND			hVimWnd;
+	HANDLE				hClipData;
+	char			*	lpClipData;
+	long				i;
+
+	if ((i = yank_to_clipboard(NULL)) != 0)
+	{
+		hClipData = GlobalAlloc(GMEM_MOVEABLE, i);
+		if (hClipData == NULL)
+			return;
+		if ((lpClipData = GlobalLock(hClipData)) == NULL)
+		{
+			GlobalFree(hClipData);
+			return;
+		}
+		yank_to_clipboard(lpClipData);
+		GlobalUnlock(hClipData);
+		if (OpenClipboard(hVimWnd) == FALSE)
+		{
+			GlobalFree(hClipData);
+			return;
+		}
+		EmptyClipboard();
+		SetClipboardData(CF_TEXT, hClipData);
+		CloseClipboard();
+	}
+}
+#endif

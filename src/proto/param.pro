@@ -2,7 +2,7 @@
 void set_init __PARMS((void));
 int doset __PARMS((unsigned char *arg));
 void paramchanged __PARMS((unsigned char *arg));
-int makeset __PARMS((struct __stdio *fd));
+int makeset __PARMS((FILE *fd));
 void clear_termparam __PARMS((void));
 void comp_col __PARMS((void));
 void win_copy_options __PARMS((struct window *wp_from, struct window *wp_to));

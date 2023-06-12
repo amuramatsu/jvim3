@@ -318,20 +318,22 @@ static struct
 #define CMD_yank 134
 	{(char_u *)"z",				RANGE+COUNT+TRLBAR},		/* not supported */
 #define CMD_z 135
+	{(char_u *)"syntax",		EXTRA+TRLBAR+USECTRLV},
+#define CMD_syntax 136
 	{(char_u *)"@",				RANGE+EXTRA+TRLBAR},
-#define CMD_at 136
+#define CMD_at 137
 	{(char_u *)"!",				RANGE+NAMEDFS},
-#define CMD_bang 137
+#define CMD_bang 138
 	{(char_u *)"<",				RANGE+COUNT+TRLBAR},
-#define CMD_lshift 138
+#define CMD_lshift 139
 	{(char_u *)">",				RANGE+COUNT+TRLBAR},
-#define CMD_rshift 139
+#define CMD_rshift 140
 	{(char_u *)"=",				RANGE+TRLBAR},
-#define CMD_equal 140
+#define CMD_equal 141
 	{(char_u *)"&",				RANGE+EXTRA},
-#define CMD_and 141
+#define CMD_and 142
 	{(char_u *)"~",				RANGE+EXTRA}
-#define CMD_tilde 142
-#define CMD_SIZE 143
+#define CMD_tilde 143
+#define CMD_SIZE 144
 
 };

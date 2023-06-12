@@ -47,7 +47,7 @@
 /* 
  * Some systems have the page size in statfs, some in stat
  */
-#if defined(SCO) || defined(_SEQUENT_) || defined(__sgi) || defined(MIPS) || defined(MIPSEB) || defined(m88k)
+#if (defined(SCO) || defined(_SEQUENT_) || defined(__sgi) || defined(MIPS) || defined(MIPSEB) || defined(m88k)) && !defined(sony)
 # include <sys/types.h>
 # include <sys/statfs.h>
 # define STATFS statfs
@@ -238,7 +238,11 @@ mf_close(mfp, delete)
 			EMSG("Close error on swap file");
 	}
 	if (delete && mfp->mf_fname != NULL)
+#ifdef KANJI
+		remove(fileconvsto(mfp->mf_fname));
+#else
 		remove((char *)mfp->mf_fname);
+#endif
 											/* free entries in used list */
 	for (hp = mfp->mf_used_first; hp != NULL; hp = nextp)
 	{
@@ -820,7 +824,11 @@ mf_read(mfp, hp)
 	page_size = mfp->mf_page_size;
 	offset = page_size * hp->bh_bnum;
 	size = page_size * hp->bh_page_count;
+#if defined(__FreeBSD__) || defined(__bsdi__)
+	if (lseek(mfp->mf_fd, (off_t)offset, SEEK_SET) != offset)
+#else
 	if (lseek(mfp->mf_fd, offset, SEEK_SET) != offset)
+#endif
 	{
 		EMSG("Seek error in swap file read");
 		return FAIL;
@@ -877,7 +885,11 @@ mf_write(mfp, hp)
 			hp2 = hp;
 
 		offset = page_size * nr;
+#if defined(__FreeBSD__) || defined(__bsdi__)
+		if (lseek(mfp->mf_fd, (off_t)offset, SEEK_SET) != offset)
+#else
 		if (lseek(mfp->mf_fd, offset, SEEK_SET) != offset)
+#endif
 		{
 			EMSG("Seek error in swap file write");
 			return FAIL;
@@ -1089,15 +1101,27 @@ mf_do_open(mfp, fname, new)
 	 * not possible after the open on the Amiga.
 	 * fname cannot be NameBuff, because it has been allocated.
 	 */
+#ifdef KANJI
+	if (FullName(fileconvsto(fname), NameBuff, MAXPATHL) == FAIL)
+#else
 	if (FullName(fname, NameBuff, MAXPATHL) == FAIL)
+#endif
 		mfp->mf_xfname = NULL;
 	else
+#ifdef KANJI
+		mfp->mf_xfname = strsave(fileconvsfrom(NameBuff));
+#else
 		mfp->mf_xfname = strsave(NameBuff);
+#endif
 
 	/*
 	 * try to open the file
 	 */
+#ifdef KANJI
+	mfp->mf_fd = open(fileconvsto(fname), new ? (O_CREAT | O_RDWR | O_TRUNC) : (O_RDONLY)
+#else
 	mfp->mf_fd = open((char *)fname, new ? (O_CREAT | O_RDWR | O_TRUNC) : (O_RDONLY)
+#endif
 
 #ifdef AMIGA				/* Amiga has no mode argument */
 					);

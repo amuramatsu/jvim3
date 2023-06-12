@@ -30,10 +30,10 @@
 
 #ifndef USE_SYSTEM		/* use fork/exec to start the shell */
 # include <sys/wait.h>
-# if !defined(SCO) && !defined(SOLARIS) && !defined(hpux) && !defined(__NetBSD__) && !defined(__FreeBSD__) && !defined(_SEQUENT_) && !defined(UNISYS)	/* SCO returns pid_t */
+# if !defined(SCO) && !defined(SOLARIS) && !defined(hpux) && !defined(__NetBSD__) && !defined(__FreeBSD__) && !defined(_SEQUENT_) && !defined(UNISYS) && !defined(__sgi) && !defined(AIX) && !defined(__bsdi__)	/* SCO returns pid_t */
 extern int fork();
 # endif
-# if !defined(linux) && !defined(SOLARIS) && !defined(USL) && !defined(sun) && !(defined(hpux) && defined(__STDC__)) && !defined(__NetBSD__) && !defined(__FreeBSD__) && !defined(USL) && !defined(UNISYS)
+# if !defined(__GNU__) && !defined(linux) && !defined(SOLARIS) && !defined(USL) && !defined(sun) && !(defined(hpux) && defined(__STDC__)) && !defined(__OpenBSD__) && !defined(__NetBSD__) && !defined(__FreeBSD__) && !defined(USL) && !defined(UNISYS) && !defined(sony) && !defined(__sgi) && !defined(AIX) && !defined(__CYGWIN__) && !defined(__bsdi__)
 extern int execvp __ARGS((const char *, const char **));
 # endif
 #endif
@@ -49,8 +49,11 @@ extern int execvp __ARGS((const char *, const char **));
 #  include <sys/select.h>
 #  define bzero(a, b)	memset((a), 0, (b))
 # endif
-# if !defined(M_XENIX) && !defined(UNICOS)
+# if !defined(M_XENIX) && !defined(UNICOS) && !defined(AIX31)
 #  include <poll.h>
+# endif
+# if defined(AIX31)
+#  include <sys/poll.h>
 # endif
 # if defined(SCO) || defined(ISC)
 #  include <sys/stream.h>
@@ -65,7 +68,7 @@ extern int execvp __ARGS((const char *, const char **));
 # include <termio.h>
 #else	/* SYSV_UNIX */
 # include <sys/time.h>
-# if defined(hpux) || defined(linux)
+# if defined(hpux) || defined(linux) || defined(__CYGWIN__)
 #  include <termio.h>
 #  if defined(hpux) && !defined(SIGWINCH)	/* hpux 9.01 has it */
 #   define SIGWINCH SIGWINDOW
@@ -113,7 +116,7 @@ static void fill_inbuf __ARGS((void));
 #ifdef USL
 static void sig_winch __ARGS((int));
 #else
-# if defined(SIGWINCH) && !defined(linux) && !defined(__alpha) && !defined(mips) && !defined(_SEQUENT_) && !defined(SCO) && !defined(SOLARIS) && !defined(ISC)
+# if defined(SIGWINCH) && !defined(linux) && !defined(__alpha) && !defined(mips) && !defined(_SEQUENT_) && !defined(SCO) && !defined(SOLARIS) && !defined(ISC) && !defined(__CYGWIN__)
 static void sig_winch __ARGS((int, int, struct sigcontext *));
 # endif
 #endif
@@ -183,7 +186,7 @@ GetChars(buf, maxlen, wtime)
 			set_winsize(0, 0, FALSE);
 			do_resize = FALSE;
 		}
-		/* 
+		/*
 		 * we want to be interrupted by the winch signal
 		 */
 		WaitForChar(-1);
@@ -215,21 +218,48 @@ mch_avail_mem(special)
 	void
 vim_delay()
 {
+# ifdef notdef
 	poll(0, 0, 500);
+# else
+	int			i;
+
+	for (i = 0; i < 5; i++)
+	{
+		if (WaitForChar(0))
+			break;
+		poll(0, 0, 100);
+	}
+# endif
 }
 #else
+# ifndef __bsdi__	/* ken */
 # if (defined(__STDC__) && !defined(hpux)) || defined(ultrix)
 extern int select __ARGS((int, fd_set *, fd_set *, fd_set *, struct timeval *));
+# endif
 # endif
 
 	void
 vim_delay()
 {
+#  ifdef notdef
 	struct timeval tv;
 
 	tv.tv_sec = 25 / 50;
 	tv.tv_usec = (25 % 50) * (1000000/50);
 	select(0, 0, 0, 0, &tv);
+#  else
+	struct timeval tv;
+	int			i;
+
+	tv.tv_sec = 100 / 1000;
+	tv.tv_usec = (100 % 1000) * 1000;
+	for (i = 0; i < 5; i++)
+	{
+		if (WaitForChar(0))
+			break;
+		select(0, NULL, NULL, NULL, &tv);
+	}
+#  endif
 }
 #endif
 
@@ -268,6 +298,9 @@ sig_winch(sig, code, scp)
 	void
 mch_suspend()
 {
+#if defined(FEPCTRL) && defined(ONEW)
+	onew_freqsave();
+#endif
 #ifdef SIGTSTP
 	settmode(0);
 	kill(0, SIGTSTP);		/* send ourselves a STOP signal */
@@ -343,7 +376,7 @@ get_x11_windis()
 	 * this is very complicated.
 	 * We assume that zero is invalid for WINDOWID.
 	 */
-	if (x11_window == 0 && (winid = getenv("WINDOWID")) != NULL) 
+	if (x11_window == 0 && (winid = getenv("WINDOWID")) != NULL)
 		x11_window = (Window)atol(winid);
 	if (x11_window != 0 && x11_display == NULL)
 		x11_display = XOpenDisplay(NULL);
@@ -451,6 +484,8 @@ set_x11_icon(icon)
 
 #else	/* USE_X11 */
 
+# ifdef notdef		/* original */
+
 	static void
 get_x11_title()
 {
@@ -465,6 +500,31 @@ get_x11_icon()
 	else
 		oldicon = term_strings.t_name;
 }
+
+# else
+
+	static char_u *
+get_term_strings()
+{
+	if (STRNCMP(term_strings.t_name, "builtin_", 8) == 0)
+		return term_strings.t_name + 8;
+	else
+		return term_strings.t_name;
+}
+
+	static void
+get_x11_title()
+{
+	oldtitle = get_term_strings();
+}
+
+	static void
+get_x11_icon()
+{
+	oldicon = get_term_strings();
+}
+
+# endif
 
 #endif	/* USE_X11 */
 
@@ -496,6 +556,10 @@ mch_settitle(title, icon)
 	 * 		 than x11 calls, because the x11 calls don't always work
 	 */
 	if (	STRCMP(term_strings.t_name, "xterm") == 0 ||
+#ifdef KANJI
+			STRCMP(term_strings.t_name, "rxvt" ) == 0 ||
+			STRCMP(term_strings.t_name, "kterm") == 0 ||
+#endif
 			STRCMP(term_strings.t_name, "builtin_xterm") == 0)
 		type = 2;
 
@@ -584,14 +648,16 @@ mch_restore_title(which)
  * Get name of current directory into buffer 'buf' of length 'len' bytes.
  * Return OK for success, FAIL for failure.
  */
-	int 
+	int
 vim_dirname(buf, len)
 	char_u *buf;
 	int len;
 {
 #if defined(SYSV_UNIX) || defined(USL) || defined(hpux) || defined(linux)
 	extern int		errno;
+# ifndef linux
 	extern char		*sys_errlist[];
+# endif
 
 	if (getcwd((char *)buf, len) == NULL)
 	{
@@ -609,7 +675,7 @@ vim_dirname(buf, len)
  *
  * return FAIL for failure, OK for success
  */
-	int 
+	int
 FullName(fname, buf, len)
 	char_u *fname, *buf;
 	int len;
@@ -688,7 +754,7 @@ isFullName(fname)
 /*
  * get file permissions for 'name'
  */
-	long 
+	long
 getperm(name)
 	char_u *name;
 {
@@ -721,7 +787,7 @@ setperm(name, perm)
  * return FALSE if "name" is not a directory
  * return -1 for error
  */
-	int 
+	int
 isdir(name)
 	char_u *name;
 {
@@ -740,12 +806,19 @@ isdir(name)
 mch_windexit(r)
 	int r;
 {
+#ifdef FEPCTRL
+	if (FepInit)
+		fep_term();
+#endif
 	settmode(0);
 	exiting = TRUE;
 	mch_settitle(oldtitle, oldicon);	/* restore xterm title */
 	stoptermcap();
 	flushbuf();
 	ml_close_all(); 				/* remove all memfiles */
+#if defined(FEPCTRL) && defined(ONEW)
+	onew_freqsave();
+#endif
 	exit(r);
 }
 
@@ -905,6 +978,9 @@ mch_get_winsize()
 	check_winsize();
 
 /* if size changed: screenalloc will allocate new screen buffers */
+#ifdef CANNA
+	canna_resize();
+#endif
 	return OK;
 }
 
@@ -914,7 +990,7 @@ mch_set_winsize()
 	/* should try to set the window size to Rows and Columns */
 }
 
-	int 
+	int
 call_shell(cmd, dummy, cooked)
 	char_u	*cmd;
 	int		dummy;
@@ -926,6 +1002,11 @@ call_shell(cmd, dummy, cooked)
 	char_u	newcmd[1024];
 
 	flushbuf();
+
+# ifdef FEPCTRL
+	if (FepInit)
+		fep_term();
+# endif
 
 	if (cooked)
 		settmode(0); 				/* set to cooked mode */
@@ -956,6 +1037,10 @@ call_shell(cmd, dummy, cooked)
 	if (cooked)
 		settmode(1); 						/* set to raw mode */
 	resettitle();
+# ifdef FEPCTRL
+	if (FepInit)
+		fep_init();
+# endif
 	return (x ? FAIL : OK);
 
 #else /* USE_SYSTEM */		/* first attempt at not using system() */
@@ -970,6 +1055,12 @@ call_shell(cmd, dummy, cooked)
 	int		inquote;
 
 	flushbuf();
+
+# ifdef FEPCTRL
+	if (FepInit)
+		fep_term();
+# endif
+
 	signal(SIGINT, SIG_IGN);	/* we don't want to be killed here */
 	if (cooked)
 		settmode(0);			/* set to cooked mode */
@@ -979,7 +1070,7 @@ call_shell(cmd, dummy, cooked)
 	 * 2: separate them and built argv[]
 	 */
 	STRCPY(newcmd, p_sh);
-	for (i = 0; i < 2; ++i)	
+	for (i = 0; i < 2; ++i)
 	{
 		p = newcmd;
 		inquote = FALSE;
@@ -1034,7 +1125,12 @@ call_shell(cmd, dummy, cooked)
 	}
 	else					/* parent */
 	{
+#if defined(notdef) || !defined(ECHILD)
 		wait(&status);
+#else
+		while (wait(&status) != 0 && errno != ECHILD)
+			;
+#endif
 		status = (status >> 8) & 255;
 		if (status)
 		{
@@ -1074,6 +1170,10 @@ error:
 		settmode(1); 						/* set to raw mode */
 	resettitle();
 	signal(SIGINT, SIG_DFL);
+# ifdef FEPCTRL
+	if (FepInit)
+		fep_init();
+# endif
 	return (status ? FAIL : OK);
 
 #endif /* USE_SYSTEM */
@@ -1125,6 +1225,14 @@ fill_inbuf()
 	len = read(0, inbuf + inbufcount, (long)(INBUFLEN - inbufcount));
 	if (len <= 0)	/* cannot read input??? */
 	{
+#if defined(__CYGWIN__)
+		if (do_resize)
+		{
+			set_winsize(0, 0, FALSE);
+			do_resize = FALSE;
+			return;
+		}
+#endif
 		fprintf(stderr, "Vim: Error reading input, exiting...\n");
 		exit(1);
 	}
@@ -1144,7 +1252,7 @@ fill_inbuf()
 	}
 }
 
-/* 
+/*
  * Wait "ticks" until a character is available from the keyboard or from inbuf[]
  * ticks = -1 will block forever
  */
@@ -1158,7 +1266,7 @@ WaitForChar(ticks)
 	return RealWaitForChar(ticks);
 }
 
-/* 
+/*
  * Wait "ticks" until a character is available from the keyboard
  * ticks = -1 will block forever
  */
@@ -1170,7 +1278,11 @@ RealWaitForChar(ticks)
 	struct pollfd fds;
 
 	fds.fd = 0;
+# if defined(AIX31)
+	fds.reqevents = POLLIN;
+# else  /* AIX31 */
 	fds.events = POLLIN;
+# endif /* AIX31 */
 	return (poll(&fds, 1, ticks));
 #else
 	struct timeval tv;
@@ -1184,12 +1296,16 @@ RealWaitForChar(ticks)
 
 	FD_ZERO(&fdset);
 	FD_SET(0, &fdset);
+# if (defined(__STDC__) && !defined(hpux)) || defined(ultrix)
 	return (select(1, &fdset, NULL, NULL, (ticks >= 0) ? &tv : NULL));
+# else
+	return (select(1, (int*)&fdset, NULL, NULL, (ticks >= 0) ? &tv : NULL));
+# endif
 #endif
 }
 
 #if !defined(__alpha) && !defined(mips) && !defined(SCO) && !defined(remove) && !defined(CONVEX)
-	int 
+	int
 remove(buf)
 # if defined(linux) || defined(__STDC__) || defined(__NeXT__) || defined(M_UNIX)
 	const
@@ -1240,6 +1356,9 @@ ExpandWildCards(num_pat, pat, num_file, file, files_only, list_notfound)
 	char_u	*buffer;
 	char_u	*p;
 	int		use_glob = FALSE;
+#ifndef notdef
+	mode_t	save_mode;
+#endif
 
 	*num_file = 0;		/* default: no files found */
 	*file = (char_u **)"";
@@ -1307,7 +1426,13 @@ ExpandWildCards(num_pat, pat, num_file, file, files_only, list_notfound)
 #endif /* WEBB_COMPLETE */
 	if (use_glob)							/* Use csh fast option */
 		extra_shell_arg = (char_u *)"-f";
+#ifndef notdef
+	save_mode = umask(0077);;
+#endif
 	i = call_shell(command, 0, FALSE);		/* execute it */
+#ifndef notdef
+	umask(save_mode);;
+#endif
 	extra_shell_arg = NULL;
 	show_shell_mess = TRUE;
 	free(command);

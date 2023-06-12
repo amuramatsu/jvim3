@@ -59,6 +59,9 @@
 #include "regexp.h"
 #include "regmagic.h"
 #include "param.h"
+#ifdef KANJI
+#include "kanji.h"
+#endif
 
 /*
  * The "internal use only" fields in regexp.h are present to pass info from
@@ -176,6 +179,14 @@
 #define EMSG_RETURN(m) { emsg(m); return NULL; }
 
 static int ismult __ARGS((int));
+#ifdef KANJI
+static void regjp __ARGS((int, char_u));
+static char * strjpchr __ARGS((char_u *, char_u, char_u));
+static char * mstrjpchr __ARGS((char_u *, char_u, char_u));
+#endif
+#ifndef notdef
+static char_u	* regstrext __ARGS((char_u *));
+#endif
 
 	static int
 ismult(c)
@@ -231,15 +242,15 @@ static char_u   **regendp;		/* Ditto for endp. */
 
 #ifdef TILDE
 # ifdef BACKREF
-       static char_u META[] = ".[()|=+*<>~123456789";
+	   static char_u META[] = ".[()|=+*<>~123456789";
 # else
-       static char_u META[] = ".[()|=+*<>~";
+	   static char_u META[] = ".[()|=+*<>~";
 # endif
 #else
 # ifdef BACKREF
-       static char_u META[] = ".[()|=+*<>123456789";
+	   static char_u META[] = ".[()|=+*<>123456789";
 # else
-       static char_u META[] = ".[()|=+*<>";
+	   static char_u META[] = ".[()|=+*<>";
 # endif
 #endif
 
@@ -287,6 +298,13 @@ skip_regexp(p, dirc)
 	{
 		if (p[0] == dirc && !in_range)		/* found end of regexp */
 			break;
+#ifdef KANJI
+		if (ISkanji(p[0]))
+		{
+			++p;
+			continue;
+		}
+#endif
 		if ((p[0] == '[' && p_magic) || (p[0] == '\\' && p[1] == '[' && !p_magic))
 		{
 			in_range = TRUE;
@@ -332,6 +350,9 @@ regcomp(exp)
 	int 			flags;
 /*	extern char    *malloc();*/
 
+#ifndef notdef
+	exp = regstrext(exp);
+#endif
 	if (exp == NULL) {
 		EMSG_RETURN(e_null);
 	}
@@ -655,6 +676,78 @@ regatom(flagp)
 				regparse++;
 			} else
 				ret = regnode(ANYOF);
+#ifdef KANJI
+# define S_CHAR		's'
+# define R_CHAR		'r'
+			if (*regparse == ']' || *regparse == '-')
+			{
+				regc(S_CHAR);
+				regc(*regparse++);
+			}
+			while (*regparse != '\0' && *regparse != ']')
+			{
+				if (*regparse == '\\' && regparse[1])
+				{
+					regparse++;
+					regc(S_CHAR);
+					if (ISkanji(*regparse))
+					{
+						regc(*regparse++);
+						regc(*regparse++);
+					}
+					else
+						regc(*regparse++);
+				}
+				else if ((ISkanji(*regparse)
+						&& regparse[2] == '-'
+						&& regparse[2 + 1] != ']'
+						&& regparse[2 + 1] != '\0')
+							|| (!ISkanji(*regparse) && regparse[1] == '-'
+									&& regparse[2] != ']' && regparse[2] != '\0'))
+				{
+					int_u		cclass;
+					int_u		cclassend;
+
+					regc(R_CHAR);
+					if (ISkanji(*regparse))
+					{
+						if (!ISkanji(*(regparse + 2 + 1)))
+							EMSG_RETURN(e_invrange);
+						cclass = (int)regparse[0] << 8 | regparse[1];
+						regc(*regparse++);
+						regc(*regparse++);
+						regparse++;
+						cclassend = (int)regparse[0] << 8 | regparse[1];
+						regc(*regparse++);
+						regc(*regparse++);
+					}
+					else
+					{
+						if (ISkanji(*(regparse + 2)))
+							EMSG_RETURN(e_invrange);
+						cclass = UCHARAT(regparse);
+						regc(*regparse);
+						regparse += 2;
+						cclassend = UCHARAT(regparse);
+						regc(*regparse);
+						regparse++;
+					}
+					if (cclass > cclassend + 1)
+						EMSG_RETURN(e_invrange);
+				}
+				else if (ISkanji(*regparse))
+				{
+					regc(S_CHAR);
+					regc(*regparse++);
+					regc(*regparse++);
+				}
+				else
+				{
+					regc(S_CHAR);
+					regc(*regparse++);
+				}
+			}
+#else
 			if (*regparse == ']' || *regparse == '-')
 				regc(*regparse++);
 			while (*regparse != '\0' && *regparse != ']') {
@@ -680,6 +773,7 @@ regatom(flagp)
 				} else
 					regc(*regparse++);
 			}
+#endif
 			regc('\0');
 			if (*regparse != ']')
 				EMSG_RETURN(e_toomsbra);
@@ -719,7 +813,7 @@ regatom(flagp)
 					if ((p - reg_prev_sub) == 1)
 						*flagp |= SIMPLE;
 				}
-	  		} else
+			} else
 				EMSG_RETURN(e_nopresub);
 			break;
 #endif
@@ -763,6 +857,11 @@ regatom(flagp)
 			ret = regnode(EXACTLY);
 			while ((chr = peekchr()) != '\0' && (chr < Magic(0)))
 			{
+#ifdef KANJI
+				if (ISkanji(chr))
+					regjp(chr, regparse[1]);
+				else
+#endif
 				regc(chr);
 				skipchr();
 				len++;
@@ -777,6 +876,11 @@ regatom(flagp)
 			 */
 			if (len > 1 && ismult(chr))
 			{
+#ifdef KANJI
+				if (ISkanji(chr))
+					regjp(chr, regparse[1]);
+				else
+#endif
 				unregc();			/* Back off of *+= operand */
 				ungetchr();			/* and put it back for next time */
 				--len;
@@ -829,6 +933,25 @@ regc(b)
 		regsize++;
 }
 
+#ifdef KANJI
+/*
+ - regjp - emit (if appropriate) a word of code
+ */
+static void
+regjp(b, k)
+	int			b;
+	char_u		k;
+{
+	if (regcode != &regdummy)
+	{
+		*(char_u *)regcode++ = b;
+		*(char_u *)regcode++ = k;
+	}
+	else
+		regsize += 2;
+}
+#endif
+
 /*
  - unregc - take back (if appropriate) a byte of code
  */
@@ -836,7 +959,14 @@ static void
 unregc()
 {
 	if (regcode != &regdummy)
+#ifdef KANJI
+	{
+		if (ISkanji(* --regcode))
+			regcode--;
+	}
+#else
 		regcode--;
+#endif
 	else
 		regsize--;
 }
@@ -992,6 +1122,11 @@ peekchr()
 static void
 skipchr()
 {
+#ifdef KANJI
+	if (ISkanji(*regparse))
+		regparse += 2;
+	else
+#endif
 	regparse++;
 	prevchr = curchr;
 	curchr = nextchr;		/* use previously unget char, or -1 */
@@ -1021,6 +1156,14 @@ ungetchr()
 	 * Backup regparse as well; not because we will use what it points at,
 	 * but because skipchr() will bump it again.
 	 */
+#ifdef KANJI
+	if (ISkanji(curchr))
+	{
+		nextchr = -1;
+		regparse-= 2;
+	}
+	else
+#endif
 	regparse--;
 }
 
@@ -1035,6 +1178,9 @@ static char_u    *reginput;		/* String-input pointer. */
 static char_u    *regbol; 		/* Beginning of input, for ^ check. */
 static char_u   **regstartp;		/* Pointer to startp array. */
 /* static char_u   **regendp;	*/	/* Ditto for endp. */
+#ifdef KANJI
+static char_u    *regbegin; 		/* Beginning of start. */
+#endif
 
 /*
  * Forwards.
@@ -1073,9 +1219,19 @@ regexec(prog, string, at_bol)
 	/* If there is a "must appear" string, look for it. */
 	if (prog->regmust != NULL) {
 		s = string;
-		while ((s = cstrchr(s, prog->regmust[0])) != NULL) {
+#ifdef KANJI
+		while ((s = strjpchr(s, prog->regmust[0], prog->regmust[1])) != NULL)
+#else
+		while ((s = cstrchr(s, prog->regmust[0])) != NULL)
+#endif
+		{
 			if (cstrncmp(s, prog->regmust, prog->regmlen) == 0)
 				break;			/* Found it. */
+#ifdef KANJI
+			if (ISkanji(*s))
+				s += 2;
+			else
+#endif
 			s++;
 		}
 		if (s == NULL)			/* Not present. */
@@ -1086,6 +1242,9 @@ regexec(prog, string, at_bol)
 		regbol = string;		/* is possible to match bol */
 	else
 		regbol = NULL;			/* we aren't there, so don't match it */
+#ifdef KANJI
+	regbegin = string;	 		/* Beginning of start. */
+#endif
 
 	/* Simplest case:  anchored match need be tried only once. */
 	if (prog->reganch)
@@ -1095,9 +1254,19 @@ regexec(prog, string, at_bol)
 	s = string;
 	if (prog->regstart != '\0')
 		/* We know what char it must start with. */
-		while ((s = cstrchr(s, prog->regstart)) != NULL) {
+#ifdef KANJI
+		while ((s = strjpchr(s, prog->regstart, NUL)) != NULL)
+#else
+		while ((s = cstrchr(s, prog->regstart)) != NULL)
+#endif
+		{
 			if (regtry(prog, s))
 				return 1;
+#ifdef KANJI
+			if (ISkanji(*s))
+				s += 2;
+			else
+#endif
 			s++;
 		}
 	else
@@ -1105,6 +1274,10 @@ regexec(prog, string, at_bol)
 		do {
 			if (regtry(prog, s))
 				return 1;
+#ifdef KANJI
+			if (ISkanji(*s))		/* happen ?? */
+				s++;
+#endif
 		} while (*s++ != '\0');
 
 	/* Failure. */
@@ -1181,20 +1354,86 @@ regmatch(prog)
 			break;
 		  case BOW:		/* \<word; reginput points to w */
 #define isidchar(x)	(isalnum(x) || ((x) == '_'))
-		  	if (reginput != regbol && isidchar(reginput[-1]))
+#ifdef KANJI
+			if (!reginput[0])
 				return 0;
-		  	if (!reginput[0] || !isidchar(reginput[0]))
+			if (ISkanji(reginput[0]))
+			{
+				int sclass;		/* sclass == JPC_KIGOU : Symbol */
+				if (!(sclass = jpcls(reginput[0], reginput[1])))
+					return 0;
+				if (((reginput - regbegin) >= 1)
+								&& ISkanjiPointer(regbegin, &reginput[-1]) == 2
+								&& sclass == jpcls(reginput[-2], reginput[-1]))
+					return 0;
+				break;
+			}
+			else if (ISkana(reginput[0]))
+			{
+				if (((reginput - regbegin) >= 1)
+								&& ISkanjiPointer(regbegin, &reginput[-1]) == 2)
+					break;
+				if (((reginput - regbegin) >= 1) && ISkana(reginput[-1]))
+					return 0;
+				break;
+			}
+			else
+			{
+				if (((reginput - regbegin) >= 1)
+								&& ISkanjiPointer(regbegin, &reginput[-1]) == 2)
+					break;
+				if (((reginput - regbegin) >= 1) && ISkana(reginput[-1]))
+					break;
+			}
+#endif
+			if (reginput != regbol && isidchar(reginput[-1]))
+				return 0;
+			if (!reginput[0] || !isidchar(reginput[0]))
 				return 0;
 			break;
 		  case EOW:		/* word\>; reginput points after d */
-		  	if (reginput == regbol || !isidchar(reginput[-1]))
+#ifdef KANJI
+			if (reginput == regbol)
 				return 0;
-		  	if (reginput[0] && isidchar(reginput[0]))
+			if (regbol != NULL && (reginput >= (regbol + 2))
+						&& ISkanjiPointer(regbol, &reginput[-2]) == 1)
+			{
+				int sclass;
+				if (!(sclass = jpcls(reginput[-2], reginput[-1])))
+					return 0;
+				if (ISkanji(reginput[0])
+								&& sclass == jpcls(reginput[0], reginput[1]))
+					return 0;
+				break;
+			}
+			else if (regbol != NULL && (reginput >= (regbol + 1))
+													&& ISkana(reginput[-1]))
+			{
+				if (ISkana(reginput[0]))
+					return 0;
+				break;
+			}
+			else
+			{
+				if (reginput[0] != NUL && ISkanji(reginput[0]))
+					break;
+				if (reginput[0] != NUL && ISkana(reginput[0]))
+					break;
+			}
+#endif
+			if (reginput == regbol || !isidchar(reginput[-1]))
+				return 0;
+			if (reginput[0] && isidchar(reginput[0]))
 				return 0;
 			break;
 		  case ANY:
 			if (*reginput == '\0')
 				return 0;
+#ifdef KANJI
+			if (ISkanji(*reginput))
+				reginput += 2;
+			else
+#endif
 			reginput++;
 			break;
 		  case EXACTLY:{
@@ -1203,22 +1442,51 @@ regmatch(prog)
 
 				opnd = OPERAND(scan);
 				/* Inline the first character, for speed. */
+#ifdef KANJI
+				if (!reg_jic)
+#endif
 				if (*opnd != *reginput && (!reg_ic || TO_UPPER(*opnd) != TO_UPPER(*reginput)))
 					return 0;
 				len = STRLEN(opnd);
+#ifdef KANJI
+				if (reg_jic)
+				{
+					if ((len = jp_strnicmp(reginput, opnd, len)) == 0)
+						return 0;
+				}
+				else
+#endif
 				if (len > 1 && cstrncmp(opnd, reginput, len) != 0)
 					return 0;
 				reginput += len;
 			}
 			break;
 		  case ANYOF:
+#ifdef KANJI
+			if (*reginput == '\0' ||
+				mstrjpchr(OPERAND(scan), *reginput, *(reginput + 1)) == NULL)
+				return 0;
+			if (ISkanji(*reginput))
+				reginput += 2;
+			else
+#else
 			if (*reginput == '\0' || cstrchr(OPERAND(scan), *reginput) == NULL)
 				return 0;
+#endif
 			reginput++;
 			break;
 		  case ANYBUT:
+#ifdef KANJI
+			if (*reginput == '\0' ||
+				mstrjpchr(OPERAND(scan), *reginput, *(reginput + 1)) != NULL)
+				return 0;
+			if (ISkanji(*reginput))
+				reginput += 2;
+			else
+#else
 			if (*reginput == '\0' || cstrchr(OPERAND(scan), *reginput) != NULL)
 				return 0;
+#endif
 			reginput++;
 			break;
 		  case NOTHING:
@@ -1318,7 +1586,7 @@ regmatch(prog)
 					/*emsg("backref to 0-repeat");*/
 					/*return 0;*/
 				}
-		  	}
+			}
 			break;
 #endif
 		  case BRANCH:{
@@ -1370,6 +1638,13 @@ regmatch(prog)
 					/* Couldn't or didn't -- back up. */
 					no--;
 					reginput = save + no;
+#ifdef KANJI
+					if (ISkanjiPointer(save, reginput) == 2)
+					{
+						no --;
+						reginput --;
+					}
+#endif
 				}
 				return 0;
 			}
@@ -1413,6 +1688,14 @@ regrepeat(p)
 		scan += count;
 		break;
 	  case EXACTLY:
+#ifdef KANJI
+		if (ISkanji(*opnd))
+			while (*opnd == *scan && *(opnd + 1) == *(scan + 1)) {
+				count+=2;
+				scan +=2;
+			}
+		else
+#endif
 		while (*opnd == *scan || (reg_ic && TO_UPPER(*opnd) == TO_UPPER(*scan)))
 		{
 			count++;
@@ -1420,17 +1703,47 @@ regrepeat(p)
 		}
 		break;
 	  case ANYOF:
+#ifdef KANJI
+		while (*scan != '\0' &&
+						mstrjpchr(opnd, *scan, *(scan + 1)) != NULL)
+			if (ISkanji(*scan))
+			{
+				count += 2;
+				scan += 2;
+			}
+			else
+			{
+				count ++;
+				scan ++;
+			}
+#else
 		while (*scan != '\0' && cstrchr(opnd, *scan) != NULL)
 		{
 			count++;
 			scan++;
 		}
+#endif
 		break;
 	  case ANYBUT:
+#ifdef KANJI
+		while (*scan != '\0' &&
+						mstrjpchr(opnd, *scan, *(scan + 1)) == NULL)
+			if (ISkanji(*scan))
+			{
+				count += 2;
+				scan += 2;
+			}
+			else
+			{
+				count ++;
+				scan ++;
+			}
+#else
 		while (*scan != '\0' && cstrchr(opnd, *scan) == NULL) {
 			count++;
 			scan++;
 		}
+#endif
 		break;
 	  default:					/* Oh dear.  Called inappropriately. */
 		emsg(e_re_corr);
@@ -1647,6 +1960,11 @@ cstrncmp(s1, s2, n)
 	char_u		   *s1, *s2;
 	int 			n;
 {
+#ifdef KANJI
+	if (reg_jic)
+		return (jp_strnicmp(s1, s2, (size_t)n) ? 0 : 1);
+#endif
+
 	if (!reg_ic)
 		return STRNCMP(s1, s2, (size_t)n);
 
@@ -1664,7 +1982,20 @@ cstrchr(s, c)
 	register char_u		   *p;
 
 	if (!reg_ic)
+#ifdef KANJI
+	{
+		for (p = s; *p; p++)
+		{
+			if (*p == c)
+				return p;
+			if (ISkanji(*p))
+				p++;
+		}
+		return NULL;
+	}
+#else
 		return STRCHR(s, c);
+#endif
 
 	c = TO_UPPER(c);
 
@@ -1672,6 +2003,824 @@ cstrchr(s, c)
 	{
 		if (TO_UPPER(*p) == c)
 			return p;
+#ifdef KANJI
+		if (ISkanji(*p))
+			p++;
+#endif
 	}
 	return NULL;
 }
+
+#ifdef KANJI
+static	char *
+strjpchr(s, c, k)
+	char_u			*s;
+	char_u			c, k;
+{
+	if (reg_jic)
+	{
+		char_u		work[2];
+
+		work[0] = c;
+		work[1] = k;
+		while (*s)
+		{
+			if (ISkanji(*s))
+			{
+				if ((ISkanji(c) || ISkana(c)) && k == NUL)
+					return(s);
+				if (jp_strnicmp(s, work, (size_t)(ISkanji(work[0]) ? 2 : 1)) != 0)
+					return(s);
+				s += 2;
+			}
+			else
+			{
+				if (c == *s && k == NUL)
+					return(s);
+				if (ISkanji(c) && k == NUL)
+					return(s);
+				if (jp_strnicmp(s, work, (size_t)(ISkanji(work[0]) ? 2 : 1)) != 0)
+					return(s);
+				s ++;
+			}
+		}
+	}
+	else
+	{
+		while (*s)
+		{
+			if (ISkanji(*s))
+			{
+				if (*s == c && (*(s + 1) == k || k == NUL))
+					return s;
+				s += 2;
+			}
+			else
+			{
+				if (*s == c)
+					return s;
+				if (reg_ic && (isalpha(*s) && (TO_UPPER(*s) == TO_UPPER(c))))
+					return s;
+				s ++;
+			}
+		}
+	}
+	return NULL;
+}
+
+static	char *
+mstrjpchr(s, c, k)
+	char_u			*s;
+	char_u			c, k;
+{
+	int_u		target;
+	int_u		class;
+	int_u		cclass;
+	int_u		cclassend;
+
+	if (reg_jic)
+	{
+		char_u		work[2];
+		char_u		sbuf[2];
+
+		work[0] = c;
+		work[1] = k;
+		while (*s)
+		{
+			if (*s++ == S_CHAR)
+			{
+				if (ISkanji(*s))
+				{
+					if ((ISkanji(c) || ISkana(c)) && k == NUL)
+						return(s);
+					if (jp_strnicmp(s, work, (size_t)(ISkanji(work[0]) ? 2 : 1)) != 0)
+						return(s);
+					s += 2;
+				}
+				else
+				{
+					if (c == *s && k == NUL)
+						return(s);
+					if (ISkanji(c) && k == NUL)
+						return(s);
+					if (jp_strnicmp(s, work, (size_t)(ISkanji(work[0]) ? 2 : 1)) != 0)
+						return(s);
+					s ++;
+				}
+			}
+			else
+			{
+				if (ISkanji(*s))
+				{
+					if ((ISkanji(c) || ISkana(c)) && k == NUL)
+						return(s);
+					cclass	  = (int_u)s[0] << 8 | s[1];
+					cclassend = (int_u)s[2] << 8 | s[3];
+					for (class = cclass; class <= cclassend; class++)
+					{
+						sbuf[0] = (class & 0xff00) >> 8;
+						sbuf[1] = class & 0x00ff;
+						if (jp_strnicmp(sbuf, work,
+									(size_t)(ISkanji(work[0]) ? 2 : 1)) != 0)
+							return(s);
+					}
+					s += 4;
+				}
+				else
+				{
+					cclass	  = s[0];
+					cclassend = s[1];
+					for (class = cclass; class <= cclassend; class++)
+					{
+						sbuf[0] = class;
+						if (c == sbuf[0] && k == NUL)
+							return(s);
+						if (ISkanji(c) && k == NUL)
+							return(s);
+						if (jp_strnicmp(sbuf, work, (size_t)(ISkanji(work[0]) ? 2 : 1)) != 0)
+							return(s);
+					}
+					s += 2;
+				}
+			}
+		}
+	}
+	else
+	{
+		while (*s)
+		{
+			if (*s++ == S_CHAR)
+			{
+				if (ISkanji(*s))
+				{
+					if (*s == c && (*(s + 1) == k || k == NUL))
+						return s;
+					s += 2;
+				}
+				else
+				{
+					if (*s == c)
+						return s;
+					if (reg_ic && (isalpha(*s) && (TO_UPPER(*s) == TO_UPPER(c))))
+						return s;
+					s ++;
+				}
+			}
+			else
+			{
+				if (ISkanji(*s))
+				{
+					cclass	  = (int_u)s[0] << 8 | s[1];
+					cclassend = (int_u)s[2] << 8 | s[3];
+
+					if (k != NUL)
+					{
+						target = (int_u)c << 8 | k;
+						for (class = cclass; class <= cclassend; class++)
+						{
+							if (class == target)
+								return s;
+						}
+					}
+					s += 4;
+				}
+				else
+				{
+					cclass	  = s[0];
+					cclassend = s[1];
+
+					for (class = cclass; class <= cclassend; class++)
+					{
+						if (class == c)
+							return s;
+						if (reg_ic && (isalpha(class) && (TO_UPPER(class) == TO_UPPER(c))))
+							return s;
+					}
+					s += 2;
+				}
+			}
+		}
+	}
+	return NULL;
+}
+#endif
+
+#ifndef notdef
+static char_u	*
+regstrext(exp)
+	char_u		   *exp;
+{
+	char_u			*	p;
+	char_u			*	w;
+	static	char_u	*	exptop	= NULL;
+	int					size;
+	int					loop;
+	int					range;
+
+	if (exptop)
+	{
+		free(exptop);
+		exptop = NULL;
+	}
+	if (!reg_magic || exp == NULL)
+		return(exp);
+	for (p = exp, size = 0, range = FALSE, loop = 0; loop < 2;
+											p = exp, range = FALSE, loop++)
+	{
+		while (*p)
+		{
+# ifdef KANJI
+			if (ISkanji(*p))
+			{
+				if (loop)
+				{
+					*w++ = p[0];
+					*w++ = p[1];
+				}
+				p += 2;
+			}
+			else
+# endif
+			if (*p == '\\')
+			{
+# ifdef KANJI
+				if (ISkanji(p[1]))
+				{
+					if (loop)
+					{
+						*w++ = p[0];
+						*w++ = p[1];
+						*w++ = p[2];
+					}
+					p += 3;
+				}
+				else
+# endif
+				switch (p[1]) {
+				case 'e':				/* ESC */
+					if (loop == 0)
+						size += 1;
+					else
+						*w++ = '\033';
+					p += 2;
+					break;
+				case 't':				/* TAB */
+					if (loop == 0)
+						size += 1;
+					else
+						*w++ = '\t';
+					p += 2;
+					break;
+				case 'r':				/* CR */
+					if (loop == 0)
+						size += 1;
+					else
+						*w++ = '\015';
+					p += 2;
+					break;
+				case 'b':				/* BS */
+					if (loop == 0)
+						size += 1;
+					else
+						*w++ = '\010';
+					p += 2;
+					break;
+				case 'n':				/* NL */
+					if (loop == 0)
+						size += 1;
+					else
+						*w++ = '\012';
+					p += 2;
+					break;
+				case 'i':				/* identifier character */
+				case 'k':				/* keyword character */
+					if (loop == 0)
+						size += 10;
+					else
+					{
+						if (!range)
+							*w++ = '[';
+						*w++ = '0';
+						*w++ = '-';
+						*w++ = '9';
+						*w++ = 'a';
+						*w++ = '-';
+						*w++ = 'z';
+						if (!reg_ic)
+						{
+							*w++ = 'A';
+							*w++ = '-';
+							*w++ = 'F';
+						}
+						*w++ = '_';
+						if (!range)
+							*w++ = ']';
+					}
+					p += 2;
+					break;
+				case 'I':				/* identifier but exluding digits */
+				case 'K':				/* keyword but exluding digits */
+					if (loop == 0)
+						size += 7;
+					else
+					{
+						if (!range)
+							*w++ = '[';
+						*w++ = 'a';
+						*w++ = '-';
+						*w++ = 'z';
+						if (!reg_ic)
+						{
+							*w++ = 'A';
+							*w++ = '-';
+							*w++ = 'F';
+						}
+						*w++ = '_';
+						if (!range)
+							*w++ = ']';
+					}
+					p += 2;
+					break;
+				case 'f':				/* filename character */
+					if (loop == 0)
+						size += 12;
+					else
+					{
+						if (!range)
+							*w++ = '[';
+						*w++ = '^';
+						*w++ = '\\';
+						*w++ = '\\';
+						*w++ = '/';
+						*w++ = ':';
+						*w++ = '\\';
+						*w++ = '*';
+						*w++ = '?';
+						*w++ = '"';
+						*w++ = '<';
+						*w++ = '>';
+						*w++ = '|';
+						if (!range)
+							*w++ = ']';
+					}
+					p += 2;
+					break;
+				case 'F':				/* filename but exluding digits */
+					if (loop == 0)
+						size += 15;
+					else
+					{
+						if (!range)
+							*w++ = '[';
+						*w++ = '^';
+						*w++ = '\\';
+						*w++ = '\\';
+						*w++ = '/';
+						*w++ = ':';
+						*w++ = '\\';
+						*w++ = '*';
+						*w++ = '?';
+						*w++ = '"';
+						*w++ = '<';
+						*w++ = '>';
+						*w++ = '|';
+						*w++ = '0';
+						*w++ = '-';
+						*w++ = '9';
+						if (!range)
+							*w++ = ']';
+					}
+					p += 2;
+					break;
+				case 'p':				/* pritable character */
+					if (loop == 0)
+						size += 7;
+					else
+					{
+						if (!range)
+							*w++ = '[';
+						*w++ = '\t';
+						*w++ = '\040';
+						*w++ = '-';
+						*w++ = '\137';
+						*w++ = '\141';
+						*w++ = '-';
+						*w++ = '\176';
+						if (!range)
+							*w++ = ']';
+					}
+					p += 2;
+					break;
+				case 'P':				/* pritable but exluding digits */
+					if (loop == 0)
+						size += 7;
+					else
+					{
+						if (!range)
+							*w++ = '[';
+						*w++ = '\t';
+						*w++ = '\040';
+						*w++ = '-';
+						*w++ = '\057';
+						*w++ = '\072';
+						*w++ = '-';
+						*w++ = '\137';
+						*w++ = '\141';
+						*w++ = '-';
+						*w++ = '\176';
+						if (!range)
+							*w++ = ']';
+					}
+					p += 2;
+					break;
+				case 's':				/* whitespace  SP/TAB */
+					if (loop == 0)
+						size += 2;
+					else
+					{
+						if (!range)
+							*w++ = '[';
+						*w++ = ' ';
+						*w++ = '\t';
+						if (!range)
+							*w++ = ']';
+					}
+					p += 2;
+					break;
+				case 'S':				/* not whitespace */
+					if (loop == 0)
+						size += 3;
+					else
+					{
+						if (!range)
+							*w++ = '[';
+						*w++ = '^';
+						*w++ = ' ';
+						*w++ = '\t';
+						if (!range)
+							*w++ = ']';
+					}
+					p += 2;
+					break;
+				case 'd':				/* digit */
+					if (loop == 0)
+						size += 3;
+					else
+					{
+						if (!range)
+							*w++ = '[';
+						*w++ = '0';
+						*w++ = '-';
+						*w++ = '9';
+						if (!range)
+							*w++ = ']';
+					}
+					p += 2;
+					break;
+				case 'D':				/* not digit */
+					if (loop == 0)
+						size += 4;
+					else
+					{
+						if (!range)
+							*w++ = '[';
+						*w++ = '^';
+						*w++ = '0';
+						*w++ = '-';
+						*w++ = '9';
+						if (!range)
+							*w++ = ']';
+					}
+					p += 2;
+					break;
+				case 'x':				/* hex digit */
+					if (loop == 0)
+						size += 9;
+					else
+					{
+						if (!range)
+							*w++ = '[';
+						*w++ = '0';
+						*w++ = '-';
+						*w++ = '9';
+						*w++ = 'a';
+						*w++ = '-';
+						*w++ = 'f';
+						if (!reg_ic)
+						{
+							*w++ = 'A';
+							*w++ = '-';
+							*w++ = 'F';
+						}
+						if (!range)
+							*w++ = ']';
+					}
+					p += 2;
+					break;
+				case 'X':				/* not hex digit */
+					if (loop == 0)
+						size += 10;
+					else
+					{
+						if (!range)
+							*w++ = '[';
+						*w++ = '^';
+						*w++ = '0';
+						*w++ = '-';
+						*w++ = '9';
+						*w++ = 'a';
+						*w++ = '-';
+						*w++ = 'f';
+						if (!reg_ic)
+						{
+							*w++ = 'A';
+							*w++ = '-';
+							*w++ = 'F';
+						}
+						if (!range)
+							*w++ = ']';
+					}
+					p += 2;
+					break;
+				case 'o':				/* octal digit */
+					if (loop == 0)
+						size += 3;
+					else
+					{
+						if (!range)
+							*w++ = '[';
+						*w++ = '0';
+						*w++ = '-';
+						*w++ = '7';
+						if (!range)
+							*w++ = ']';
+					}
+					p += 2;
+					break;
+				case 'O':				/* not octal digit */
+					if (loop == 0)
+						size += 4;
+					else
+					{
+						if (!range)
+							*w++ = '[';
+						*w++ = '^';
+						*w++ = '0';
+						*w++ = '-';
+						*w++ = '7';
+						if (!range)
+							*w++ = ']';
+					}
+					p += 2;
+					break;
+				case 'w':				/* word character */
+					if (loop == 0)
+						size += 10;
+					else
+					{
+						if (!range)
+							*w++ = '[';
+						*w++ = '0';
+						*w++ = '-';
+						*w++ = '9';
+						*w++ = 'a';
+						*w++ = '-';
+						*w++ = 'z';
+						if (!reg_ic)
+						{
+							*w++ = 'A';
+							*w++ = '-';
+							*w++ = 'F';
+						}
+						*w++ = '_';
+						if (!range)
+							*w++ = ']';
+					}
+					p += 2;
+					break;
+				case 'W':				/* not word character */
+					if (loop == 0)
+						size += 11;
+					else
+					{
+						if (!range)
+							*w++ = '[';
+						*w++ = '^';
+						*w++ = '0';
+						*w++ = '-';
+						*w++ = '9';
+						*w++ = 'a';
+						*w++ = '-';
+						*w++ = 'z';
+						if (!reg_ic)
+						{
+							*w++ = 'A';
+							*w++ = '-';
+							*w++ = 'F';
+						}
+						*w++ = '_';
+						if (!range)
+							*w++ = ']';
+					}
+					p += 2;
+					break;
+				case 'h':				/* head of word character */
+					if (loop == 0)
+						size += 7;
+					else
+					{
+						if (!range)
+							*w++ = '[';
+						*w++ = 'a';
+						*w++ = '-';
+						*w++ = 'z';
+						if (!reg_ic)
+						{
+							*w++ = 'A';
+							*w++ = '-';
+							*w++ = 'F';
+						}
+						*w++ = '_';
+						if (!range)
+							*w++ = ']';
+					}
+					p += 2;
+					break;
+				case 'H':				/* not head of word character */
+					if (loop == 0)
+						size += 8;
+					else
+					{
+						if (!range)
+							*w++ = '[';
+						*w++ = '^';
+						*w++ = 'a';
+						*w++ = '-';
+						*w++ = 'z';
+						if (!reg_ic)
+						{
+							*w++ = 'A';
+							*w++ = '-';
+							*w++ = 'F';
+						}
+						*w++ = '_';
+						if (!range)
+							*w++ = ']';
+					}
+					p += 2;
+					break;
+				case 'a':				/* alphabetic character */
+					if (loop == 0)
+						size += 6;
+					else
+					{
+						if (!range)
+							*w++ = '[';
+						*w++ = 'a';
+						*w++ = '-';
+						*w++ = 'z';
+						if (!reg_ic)
+						{
+							*w++ = 'A';
+							*w++ = '-';
+							*w++ = 'F';
+						}
+						if (!range)
+							*w++ = ']';
+					}
+					p += 2;
+					break;
+				case 'A':				/* not alphabetic character */
+					if (loop == 0)
+						size += 7;
+					else
+					{
+						if (!range)
+							*w++ = '[';
+						*w++ = '^';
+						*w++ = 'a';
+						*w++ = '-';
+						*w++ = 'z';
+						if (!reg_ic)
+						{
+							*w++ = 'A';
+							*w++ = '-';
+							*w++ = 'F';
+						}
+						if (!range)
+							*w++ = ']';
+					}
+					p += 2;
+					break;
+				case 'l':				/* lowercase character */
+					if (loop == 0)
+						size += 3;
+					else
+					{
+						if (!range)
+							*w++ = '[';
+						*w++ = 'a';
+						*w++ = '-';
+						*w++ = 'z';
+						if (!range)
+							*w++ = ']';
+					}
+					p += 2;
+					break;
+				case 'L':				/* not lowercase character */
+					if (loop == 0)
+						size += 4;
+					else
+					{
+						if (!range)
+							*w++ = '[';
+						*w++ = '^';
+						*w++ = 'a';
+						*w++ = '-';
+						*w++ = 'z';
+						if (!range)
+							*w++ = ']';
+					}
+					p += 2;
+					break;
+				case 'u':				/* uppercase character */
+					if (loop == 0)
+						size += 3;
+					else
+					{
+						if (!range)
+							*w++ = '[';
+						*w++ = 'A';
+						*w++ = '-';
+						*w++ = 'Z';
+						if (!range)
+							*w++ = ']';
+					}
+					p += 2;
+					break;
+				case 'U':				/* not uppercase character */
+					if (loop == 0)
+						size += 4;
+					else
+					{
+						if (!range)
+							*w++ = '[';
+						*w++ = '^';
+						*w++ = 'A';
+						*w++ = '-';
+						*w++ = 'Z';
+						if (!range)
+							*w++ = ']';
+					}
+					p += 2;
+					break;
+				case '\0':
+					if (loop)
+						*w++ = p[0];
+					p++;
+					break;
+				default:
+					if (loop)
+					{
+						*w++ = p[0];
+						*w++ = p[1];
+					}
+					p += 2;
+					break;
+				}
+			}
+			else if (*p == '[')
+			{
+				range = TRUE;
+				if (loop)
+					*w++ = p[0];
+				p++;
+			}
+			else if (*p == ']')
+			{
+				range = FALSE;
+				if (loop)
+					*w++ = p[0];
+				p++;
+			}
+			else
+			{
+				if (loop)
+					*w++ = p[0];
+				p++;
+			}
+		}
+		if (loop)
+			*w = '\0';
+		else
+		{
+			if (size == 0)
+				return(exp);
+			if ((w = alloc(strlen(exp) + 1 + size)) == NULL)
+				return(NULL);
+			exptop = w;
+		}
+	}
+	return(exptop);
+}
+#endif

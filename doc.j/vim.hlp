@@ -1,0 +1,569 @@
+                     VIM help file 目次
+
+RETURN  HELP終了                VIM stands for Vi IMproved.
+ SPACE  次ページ表示            Most of VIM was made by Bram Moolenaar.
+     a  この目次に戻る          日本語版HELP by Ogasawara Hiroyuki.
+     b  前のページに戻る
+
+c   カーソル移動                     q   オプション i〜n
+d   ワード/ブロック単位移動          r   オプション p〜s
+e   検索                             s   オプション s〜t
+f   その他の移動/タグジャンプ        t   オプション t〜y
+g   スクロール                       u   undo, shell, quickfix その他
+h   挿入モード                       v   コマンドライン編集コマンド
+i   挿入モードでの操作               w   Exモードの範囲指定と特殊機能
+j   変更コマンド/シフト              x   fileエディット
+k   その他の変更コマンド             y   ファイルリスト
+l   テキスト削除/コピー/移動         z   ファイル書き出しと終了
+m   繰り返し                         A   VIM起動オプション
+n   キーマッピング/略語登録          B   ウィンドウ操作コマンド
+o   オプションコマンド a〜c          C   バッファリストコマンド
+p   オプション d〜h
+
+Read "reference.doc" for a more complete explanation.
+ カーソル左右移動 
+N  h            左 ( CTRL-H, BS, [←] も同じ )
+N  l            右 ( SPACE, [→] も同じ )
+   0            行の先頭へ移動
+   ^            行の先頭文字へ移動(空白を除く)
+N  $            行末に移動
+N  |            N文字目に移動する
+N  f<char>      その行の<char>文字の位置に移動する(右方向検索)
+N  F<char>      その行の<char>文字の位置に移動する(左方向検索)
+N  t<char>      その行の<char>文字の位置の左に移動する(右方向検索)
+N  T<char>      その行の<char>文字の位置の右に移動する(左方向検索)
+N  ;            f,F,t,T コマンドの次検索
+N  ,            f,F,t,T コマンドの逆検索
+
+ カーソル上下移動 
+N  k            上 ( CTRL-P, [↑] も同じ )
+N  j            下 ( CTRL-J, CTRL-N, LF, [↓] も同じ )
+N  -            上の行の空白でない先頭位置に移動
+N  +            下の行の空白でない先頭位置に移動 (CTRL-M, CR でも同じ )
+N  _            N - 1 行下の空白でない位置に移動
+N  G            N 行目に飛ぶ (デフォルトで最終行へ飛ぶ)
+N  %            ファイル行数の N パーセント目の位置に飛ぶ
+ ワード移動 
+N  w            次のワード位置に進む
+N  W            スペースで区切った次のワード位置に進む
+N  e            次のワードの最後の位置に進む
+N  E            スペースで区切った次のワードの最後の位置に進む
+N  b            前のワード位置に進む
+N  B            スペースで区切った前のワード位置に進む
+
+Text object motions
+N  )            N sentences forward
+N  (            N sentences backward
+N  }            N paragraphs forward
+N  {            N paragraphs backward
+N  ]]           N sections forward
+N  [[           N sections backward
+N  ][           N sections (starting with a <}>) forward
+N  []           N sections (starting with a <}>) backward
+N  [(  [{       N times back to unclosed <(> or <{>
+N  ])  ]}       N times forward to unclosed <(> or <{>
+ 検索 
+N  /{pattern}[/]        パターン検索
+N  ?{pattern}[?]        逆検索
+N  /                    前方向に再検索
+N  ?                    逆方向に再検索
+N  n                    次検索(最後の検索を繰り返し)
+N  N                    次検索(最後の検索の逆方向繰り返し)
+N  *                    カーソル位置の単語検索
+N  #                    カーソル位置の単語逆検索
+
+special characters in search patterns      magic      nomagic
+           matches any single character      .            \.
+                  matches start of line      ^            ^
+                    matches end of line      $            $
+                  matches start of word      \<           \<
+                    matches end of word      \>           \>
+   matches a single char from the range      [a-z]        \[a-z]
+ matches a single char not in the range      [^a-z]       \[^a-z]
+matches 0 or more of the preceding atom      *            \*
+matches 1 or more of the preceding atom      \+           \+
+   matches 0 or 1 of the preceding atom      \=           \=
+                 separates two branches      \|           \|
+           group a pattern into an atom      \(\)         \(\)
+ その他の移動コマンド 
+   m<a-zA-Z>    カーソル位置に <a-zA-Z> のマークをつける
+   `<a-zA-Z>    <a-zA-Z> のマーク位置に移動する
+   ``           最後に飛んだマーク位置に移動する
+   `[ or `]     go to the start or end of the previously operated or put text
+   '<a-zA-Z[]'> マーク位置の空白でない行頭へ飛ぶ
+:marks          マーク位置の表示
+N  CTRL-O       過去に移動したジャンプ位置を遡る
+N  CTRL-I       過去に移動したジャンプ位置を進む
+:jumps          ジャンプ位置のリストを表示する
+   %            括弧の対応位置に飛ぶ, コメントや #if/#else/#endif の対応検索
+                も可能
+N  H            現在の画面で最上位位置へ飛ぶ
+   M            現在の画面で真中の位置へ飛ぶ
+N  L            現在の画面で最下行位置へ飛ぶ
+
+ タグジャンプ 
+:ta[g][!] {tag}         タグ名を指定してその位置へ飛ぶ
+   CTRL-]               カーソル位置の単語をタグとしてジャンプ
+N  CTRL-T               過去にタグジャンプしたリストを遡る(Pop)
+:[count]po[p][!]        [count] 番目のタグリスト位置に飛ぶ
+:[count]ta[g][!]        [count] 番目のタグリスト位置に飛ぶ
+:tags                   タグリストを表示
+ スクロール 
+N  CTRL-E       表示を行スクロールアップ
+N  CTRL-D       画面の半分行進む (N行)
+N  CTRL-F       次ページ (Nページ)
+N  CTRL-Y       表示を行スクロールダウン
+N  CTRL-U       画面の半分行戻る (N行)
+N  CTRL-B       前ページ (Nページ)
+   z<CR> or zt  カーソル行が1番上になるよう書き直し
+   z.    or zz  カーソル行が中心になるよう書き直し
+   z-    or zb  カーソル行が1番下になるよう書き直し
+ 挿入 
+N  a            カーソル位置の次の文字位置へ挿入(挿入モードへ)
+N  A            行の最後に追加(挿入モードへ)
+N  i            カーソル位置に挿入(挿入モードへ)
+N  I            行の空白でない最初の位置に挿入(挿入モードへ)
+N  o            次の行に挿入(挿入モードへ)
+N  O            前の行に挿入(挿入モードへ)
+
+ その他の挿入 
+:r [file]       ファイル内容をカーソル位置に取り込む
+:r!{command}    コマンドを実行した結果(stdout)を取り込む
+
+Digraphs
+:dig[raphs]     show current list of digraphs
+:dig[raphs] {char1}{char2} {number} ...
+                add digraph(s) to the list
+ 挿入モードでの操作               action in insert mode
+CTRL-[ or <ESC>   挿入モードを終了する
+CTRL-A            最後に挿入したテキストを取り込む
+CTRL-@            CTRL+Aで取り込まれるテキストをクリアする
+CTRL-R <0-9a-z%:> 指定したカットバッファの内容を取り込む
+CTRL-J or <LF> or CTRL-M or <CR>   改行
+CTRL-K {char1} {char2}  enter digraph
+CTRL-E / CTRL-Y   次の行/前の行をコピーする
+CTRL-V            コントロールキーの挿入を指定する
+CTRL-N / CTRL-P   テキスト内から単語検索をする
+CTRL-H or <BS> or <DEL> 前の1文字を消す
+CTRL-W            前のワードを消す
+CTRL-U            挿入した行を消す
+CTRL-T            挿入行のインデント変更(右シフト)
+CTRL-D            挿入行のインデント変更(左シフト)
+0 CTRL-D or ^ CTRL-D    挿入行のインデント全削除
+{char1} <BS> {char2}    enter digraph if 'dg' option set
+CTRL-B            逆挿入モードのトグルチェンジ
+         挿入モードでのダイレクトカーソル移動 
+カーソルキー      挿入位置を変更
+SHIFT[↑]/[↓]    1画面戻る/進む(X68K版未対応)
+SHIFT[←]/[→]    ワード左右移動(X68K版未対応)
+CTRL-O {command}  挿入モードから移動コマンドを実行する(CTRL-Ojなど)
+ 変更コマンド 
+N  R            重ね書き(変更モードへ)
+N  c{motion}    指定範囲変更(挿入モードへ)
+{visual}c       指定範囲を置き換える(挿入モードへ)
+N  cc           行変更(挿入モードへ)
+N  C            行末まで変更(挿入モードへ)
+N  s            文字変更(挿入モードへ)
+N  S            行変更(挿入モードへ)
+N  r<char>      次の1文字へ置換
+N  ~            カーソル位置のアルファベットの大文字小文字変換
+{visual}~       指定範囲の大文字小文字変換
+{visual}u       指定範囲の小文字変換
+{visual}U       指定範囲の大文字変換
+N  CTRL-A       カーソル位置の数値ワードに N を加える(C言語定数値)
+N  CTRL-X       カーソル位置の数値ワードから N を引く
+N  <{motion}    左シフト(シフト文字幅はshiftwidthで指定する)
+N  <<           N 行左シフト
+N  >{motion}    右シフト
+N  >>           N 行右シフト
+N  Q{motion}    textwidth オプションに従ってをフォーマットする
+:[range]ce[nter] [width]   センタリング
+:[range]le[ft] [indent]    左よせ
+:[range]ri[ght] [width]    右よせ
+ その他の変更 
+   v            文字範囲指定開始               } カーソル移動によって
+   V            行範囲指定開始                 } 反転して示す範囲を変
+   CTRL-V       ブロック範囲指定開始           } 更
+   o            反転指定領域でのカーソル位置を先頭と最後で交換する
+
+N  !{motion}{command}
+                指定範囲をフィルタプログラムにかける
+N  !!{command}
+                N 行をフィルタプログラムにかける
+:[range]!{command}
+                指定範囲をフィルタプログラムにかける
+N  ={motion}{command}
+                フィルタ indent にかける (プログラムは 'equalprg' で指定)
+N  =={command}
+                N 行をフィルタ indent にかける
+:[range]s[ubstitute]/{pattern}/{string}/[g][c]
+                [range] の範囲で {pattern} を {string} に置換する
+                [g]は現れた全部のパターンを置換,[c]は確認置換
+:[range]s[ubstitute] [g][c]
+                前に実行した :s コマンドをもう一度実行する
+   &            前に実行した :s コマンドを現在行に対して実行する
+
+ 削除コマンド 
+N  x            カーソル位置の文字削除 (N文字)
+N  X            カーソル位置の前の文字削除 (N文字)
+N  d{motion}    指定範囲削除
+{visual}d       指定範囲削除
+N  dd           行削除 (N行)
+N  D            カーソル位置から行末まで削除
+N  J            次の行と連結する
+{visual}J       指定範囲を行連結する
+:[range]d [x]   指定範囲 [range] lines 削除しカットバッファ[x]に取り込む
+
+ テキストコピー/移動コマンド 
+   "<char>      次の操作で取り込むカットバッファを指定する
+:dis            現在の各カットバッファの内容を表示する
+N  y{motion}    テキスト内容を取り込む (カットバッファへコピー)
+{visual}y       指定範囲を取り込む
+N  yy           行取り込み (N行)
+N  Y            行取り込み (N行)
+N  p            カットバッファの内容をカーソル位置の次に挿入する
+N  P            カットバッファの内容をカーソル位置の前に挿入する
+N  ]p           インデント調整つきの p
+N  [p           インデント調整つきの P
+ 繰り返し 
+N  .            最後の変更コマンドを繰り返す
+   q<a-z>       キーボードマクロの記録開始 (<a-z>はマクロ名)
+   q            キーボードマクロの記録停止
+N  @<a-z>       キーボードマクロ実行
+N  @@           キーボードマクロの実行繰り返し
+:@<a-z>         キーボードマクロ実行
+:@@             キーボードマクロ繰り返し
+:[range]g[lobal]/{pattern}/[cmd]
+                パターンマッチした行に対して指定の Ex コマンドを実行する
+                Exコマンドのデフォルトは p
+:[range]g[lobal]!/{pattern}/[cmd]
+                パターンマッチしなかった行に対して指定の Ex コマンドを実
+                行する。Exコマンドのデフォルトは p
+:so[urce] {file}
+                Ex コマンドをファイルから読み込んで実行する
+:so[urce]! {file}
+                VIM コマンドをファイルから読み込んで実行する
+:sl[eep] [N]    N 秒 sleep する
+N  gs           N 秒 sleep する
+ キーマッピング 
+:ma[p] {lhs} {rhs}      ノーマルモードで {lhs} に {rhs} を定義
+:ma[p]! {lhs} {rhs}     挿入/コマンドモードで {lhs} に {rhs} を定義
+:no[remap][!] {lhs} {rhs}
+                        :map と同じ
+:unm[ap] {lhs}          ノーマルモードでの {lhs} の定義内容を削除する
+:unm[ap]! {lhs}         挿入/コマンドモードでの {lhs} の定義内容を削除する
+:ma[p] [lhs]            ノーマルモードでの定義内容の表示
+:ma[p]! [lhs]           挿入/コマンドモードでの定義内容の表示
+:cmap/:cunmap/:cnoremap コマンドモードでのみ有効な map/unmap/noremap コマンド
+:imap/:iunmap/:inoremap 挿入モードでのみ有効な map/unmap/noremap コマンド
+:mk[exrc][!] [file]     現在の設定内容をファイルに書き出す(デフォルト .exrc)
+                        すでに .exrc がある場合は ! が必要
+:mkv[imrc][!] [file]    デフォルトファイル名が .vimrc なだけで :mkexrc と同じ
+
+ 略語登録 
+:ab[breviate] {lhs} {rhs}    略語を登録する ({lhs} が {rhs} と同じになる)
+:ab[breviate] {lhs}          {lhs} がどう展開されるか表示する
+:ab[breviate]                登録されている略語を全部表示する
+:una[bbreviate] {lhs}        指定単語の略語登録を削除する
+:iab/:cab/:iunab/:cunab/:noreab/:cnoreab/:inoreab    これらも同じ
+ オプション 
+:se[t]                  変更したオプションを表示する
+:se[t] all              全部のオプションを表示する
+:se[t] {option}         オプションを ON にする(or STR/NUMオプション内容の表示)
+:se[t] no{option}       オプションを OFF にする
+:se[t] inv{option}      オプションの状態を反転する(トグル)
+:se[t] {option}={value} 文字列または数値オプションに値を設定する
+:se[t] {option}?        オプションの内容を表示
+
+ オプション(略記)    type  default        effect
+autoindent (ai)     toggle    off   挿入モードで前行のインデントをコピーする
+autowrite (aw)      toggle    off   新編集時に現在の変更をファイルを書き出す
+backspace (bs)      number    0     0:通常のVi, 1:改行も消せる, 2:全部消せる
+backup (bk)         toggle    on    バックアップファイルを作る
+backupdir (bdir)    string    "~/"  バックアップディレクトリの指定
+binary (bin)        toggle    off   バイナリーモード
+bioskey (bk)        toggle    on    MSDOS: use bios to get characters
+cmdheight (ch)      number     1    コマンド行の行数
+columns (co)        number    80    画面の桁数
+compatible (cp)     toggle    off   vi 完全コンパチモード指定
+ オプション(略記)    type  default        effect
+digraph (dg)        toggle    off   enable <BS> digraphs in insert mode
+directory (dir)     string    ""    スワップファイルを置くディレクトリ指定
+edcompatible        toggle    off   flags for :substitute toggle
+endofline (eol)     toggle    on    last line has a newline character
+equalalways (ea)    toggle    on    ウィンドウ開閉時,常に全部同じサイズにする
+equalprg (ep)       string    "indent"  '=' コマンドで使うプログラム名
+errorbells (eb)     toggle    off   ring the bell for error messages
+errorfile (ef)      string    "AztecC.Err" file for QuickFix option
+errorformat (efm)   string          コンパイラエラーメッセージのフォーマット
+esckeys (ek)        toggle    on    <ESC>キーの単独判定待ちをする
+expandtab (et)      toggle    off   insert mode: use spaces to enter a tab
+exrc                toggle    off   カレントの .exrc/.vimrc を読み込む
+formatprg (fp)      string    ""    'Q'で外部呼び出しする場合のプログラム名
+gdefault (gd)       toggle    off   the 'g' flag is default on for :substitute
+graphic (gr)        toggle    off   日本語版では意味を持たない
+helpfile (hf)       string    "vim:vim.hlp"     ヘルプファイル名
+hidden (hid)        toggle    off   buffers become hidden when abandoned
+highlight (hl)      string    "db,es,hs,rs,vi,si"   when to use higlighting
+history (hi)        number    20    コマンド行ヒストリの保存デー多数
+ オプション(略記)    type  default        effect
+icon                toggle    off   set icon title to file name
+ignorecase (ic)     toggle    off   ignore case in search patterns
+insertmode (im)     toggle    off   起動直後即 insert mode にする
+joinspaces (js)     toggle    on    行連結時 '.' の後ろはスペースを2つ入れる
+keywordprg (kp)     string    "ref" 'K'command で起動するプログラム名
+laststatus (ls)     number    1     STATUS行設定 0:single状態or最下WINには付か
+                                    ない,1:WIN分割時は全部に付く,2:常に付く
+lines               number    25    画面の行数
+list                toggle    off   TAB,改行を表示文字として表示
+magic               toggle    on    different pattern matching characters
+makeprg (mp)        string    "make" ':make'commandで呼び出すプログラム名
+maxmem (mm)         number    512   How may Kbyte to use for one buffer
+maxmemtot (mmt)     number    512   How may Kbyte to use for all buffers
+modeline (ml)       toggle    on    ファイルのモード行設定を有効にする
+modelines (mls)     number    5     モード行の存在を調べる行範囲
+more                toggle    on    長いリスト表示時は画面単位で一時停止する
+number (nu)         toggle    off   行番号を表示する
+ オプション(略記)    type  default        effect
+paragraphs (para)   string    "IPLPPPQPP LIpplpipbp"
+                                    nroff macros that separate paragraphs
+paste               toggle    off   paste mode: insert literally
+patchmode (pm)      string    ""    extension to use when patching files
+readonly (ro)       toggle    off   overwriting the file not allowed
+remap               toggle    on    :map command works recursively
+report              number    2     minimal number of lines for reporting
+revins (ri)         toggle    off   insert characters right to left
+ruler (ru)          toggle    off   show cursor position in status line
+scroll              number    12    scroll size for CTRL-U and CTRL-D
+scrolljump (sj)     number    1     minimal number of lines for scrolling
+sections (sect)     string    "SHNHH HUnhsh"      macros separating sections
+secure              toggle    off   security checks for .vimrc and .exrc
+shell (sh)          string    "sh"  shell to use for ! and :! commands
+shellpipe (sh)      string          pipe command to be used for :make
+shelltype (st)      number    0     how to use the shell (Amiga only)
+shiftround (sr)     toggle    off   round indent to shiftwidth with > and <
+shiftwidth (sw)     number    8     number of spaces to use for (auto)indent
+shortname (sn)      toggle    off   MSDOS-like filesystem being used
+showcmd (sc)        toggle    on    show command in status line
+showmatch (sm)      toggle    off   show matching bracket if one is inserted
+option (shorthand)   type  default        effect
+showmode (smd)      toggle    on    show insert/replace mode message
+sidescroll (ss)     number    0     minimal nr of columns for horiz. scroll
+smartindent (si)    toggle    off   do smart autoindenting
+smarttab (sta)      toggle    off   tab size depends on position
+splitbelow (sb)     toggle    off   create new windows below current one
+suffixes (su)       string    ".bak.o.h.info.swp" suffixes that are ignored
+                                    when multiple files match a wildcard
+tabstop (ts)        number    8     number of spaces that a TAB counts for
+taglength (tl)      number    0     if non-zero, tags are significant upto
+                                        this number of characters
+tagrelative (tr)    toggle    on    file names in tags file are relative
+tags                string    "tags"   names of tag files
+term                string    "amiga"   name of terminal
+terse               toggle    off   make some messages shorter
+textauto (ta)       toggle    on    detect line separator, (re)set 'textmode'
+textmode (tx)       toggle    off   use <CR><LF> for line separator
+textwidth (tw)      number    0     maximum width of a line in insert mode
+tildeop (to)        toggle    off   tilde behaves like an operator
+timeout             toggle    on    wait only 'tm' msec for mappings&key codes
+option (shorthand)   type  default        effect
+ttimeout            toggle    off   wait only 'tm' msec for key codes
+timeoutlen (tm)     number    1000  milliseconds to wait for mappings&key codes
+title               toggle    on    set window title to file name
+ttyfast (tf)        toggle    off   don't use scroll commands for terminal
+undolevels (ul)     number    100   number of changes that can be undone
+                                        (0 for Vi compatibility)
+updatecount (uc)    number    200   指定したキー操作回数毎に swap ファイル作成
+updatetime (ut)     number    4000  指定した時間(msec)経過毎に swap file 作成
+visualbell (vb)     toggle    off   use visual instead of audible beep
+warn                toggle    on    warn when changes and shell command used
+weirdinvert (wi)    toggle    off   terminal has a weird invert behaviour
+whichwrap (ww)      number    3     which left/right move commands wrap
+wildchar (wc)       number    TAB   コマンド行補完で使うキーコード指定
+winheight (wh)      number    0     minimal number of lines for current window
+wrap                toggle    on    水平スクロールの禁止
+wrapmargin (wm)     number    0     wrap text when at (columns - wrapmargin)
+wrapscan (ws)       toggle    on    searches wrap around the end of the file
+writeany (wa)       toggle    off   always write file without asking
+writebackup (wb)    toggle    on    backup a file WHILE overwriting it
+yankendofline (ye)  toggle    off   'Y' yanks from cursor to end of line
+ Undo/Redo 
+N  u            最後の変更を取り消す
+N  CTRL-R       UNDO を戻す
+   U            最後に変更した行の変更を取り消す
+ 外部コマンド実行 
+:sh             シェル起動
+:!{command}     シェルコマンドの実行
+   K            カレントワードを引数にしてプログラム'keywordprg'実行
+ Quickfix コマンド 
+:cc [nr]        エラー表示 [nr] (default 現在注目しているエラー表示)
+:cn             次のエラー表示
+:cp             前のエラー表示
+:cl             全部のエラー内容を表示する
+:cf             エラーファイルを新たに読み込む
+:cq             コンパイラのエラーコードを持って強制終了
+:make [args]    make を実行後エラー内容を読み込み最初のエラー行にジャンプする
+ その他のコマンド 
+   CTRL-L       画面の再描画
+   CTRL-G       ファイル名,カーソル位置情報の表示
+   CTRL-C       処理中断
+   <DEL>        直前に入力した回数指定値を取り消す
+:vers           VIM のバージョン表示
+:mode N         MSDOS: set screen mode to N (number, C80, C4350, etc.)
+ コマンド行編集 
+<ESC>              コマンドモード終了
+CTRL-V {char}      コントロールコード入力
+CTRL-V {number}    8進数数値によるコード入力(数値3桁必要)
+[←]/[→]          カーソル移動
+SHIFT+[←]/[→]    カーソルワード移動
+CTRL-B/CTRL-E      行の先頭/最終位置へ移動
+<BS>               カーソル位置の前の文字削除
+<DEL>              カーソル位置の文字削除
+CTRL-W             ワード削除
+CTRL-U             行内容全削除
+[↑]/[↓]          コマンド行ヒストリ
+[SC_UP]/[SC_DOWN]  コマンド行ヒストリ(ROLLUP/ROLLDOWN)
+
+ コマンド行補完 
+'wildchar'  (def. <TAB>)  カーソル位置の単語を補完する
+CTRL-D             マッチする単語のリストを表示する
+CTRL-A             マッチする単語全部を取り込む
+CTRL-L             候補が複数ある場合最大マッチする位置まで補完する
+CTRL-N             補完の次検索
+CTRL-P             補完の前検索
+ Ex モードの範囲指定 
+,               2つの行番号を,で区切って指定する
+;               idem, set cursor to the first line number
+
+{number}        絶対行番号
+.               カレント行(カーソル行)
+$               ファイルの最終行
+%               1,$ と同じ(1行目から最終行まで,つまりファイル全体)
+'t              tのマーク位置
+/{pattern}      パターンマッチした行
+?{pattern}      パターンマッチした行(逆検索)
+
++[num]          行番号の加算 (default 1)
+-[num]          行番号の減算 (default 1)
+
+ Ex 特殊文字 
+    |           コマンドセパレータ (not for ":global" and ":!")
+    "           コメント
+    #[number]   番号で指定したファイルネーム
+    %           カレントファイルネーム
+    %<  or #<   idem, but without extension
+ ファイル編集 
+:e                      Edit the current file, unless changes have been made.
+:e!                     Edit the current file always. Discard any changes.
+:e[dit] {file}          Edit {file}, unless changes have been made.
+:e[dit]! {file}         Edit {file} always. Discard any changes.
+N   CTRL-^              Edit alternate file N (equivalent to ":e #N").
+gf  or ]f               Edit the file whose name is under the cursor
+:pwd                    カレントディレクトリ名表示
+:cd [path]              カレントディレクトリを変更する
+:f[ile]                 カレントのファイル名,カーソル位置情報を表示する
+:f[ile] {name}          カレントファイル名を設定する
+:files                  Show alternate file names.
+
+Using the file list
+:ar[gs]                 Print the file list, with the current file in "[]".
+:all  or :sall          Open a window for every file.
+:wn[ext][!]             Write file and edit next file.
+:wn[ext][!] {file}      Write to {file} and edit next file, unless {file}
+                        exists. With ! overwrite existing files.
+:wN[ext][!] [file]      Write file and edit previous file.
+
+in current window    in new window
+:argu[ment] N        :sar[gument] N        Edit file N
+:n[ext]              :sn[ext]              Edit next file
+:n[ext] {filelist}   :sn[ext] {filelist}   define new list of files and edit
+                                                the first one
+:N[ext]              :sN[ext]              Edit previous file
+:rew[ind][!]         :srew[ind]            Edit first file
+:last                :slast                Edit last file
+
+ 書き込みと終了 
+:[range]w[rite][!]      カレントファイルに書き込む
+:[range]w[rite] {file}  指定ファイルに書き込む({file}が既にあると書き込めない)
+:[range]w[rite]! {file} 指定ファイルが存在していても重ね書きする
+:[range]w[rite][!] >>   カレントファイルに追加書き込みする
+:[range]w[rite][!] >> {file}
+                        指定ファイルに追加書き込みする
+:[range]w[rite] !{cmd}  指定コマンドの標準入力として実行する
+:wall[!]                全部の更新したバッファをファイルに書き込む
+
+:q[uit]                 終了する,更新してある場合は終了できない
+:q[uit]!                更新があったとしてもそれを無視して強制終了する
+:qall[!]                全部のウィンドウバッファを終了する
+:cq                     エラーコードを持って強制終了する
+:wq[!]                  カレントファイルに書き込んで終了する
+:wq[!] {file}           指定ファイルに書き込んで終了する
+:x[it][!] [file]        更新されていればファイルに書き込んで終了する
+   ZZ                   ":x" と同じ
+:xall[!]  or :wqall[!]  全部の更新されたバッファを書き込んで終了する
+
+:st[op][!]              サスペンドまたはチャイルドシェル起動.もし'aw'オプショ
+                        ンが設定されていてかつ ! がなければバッファを書き込む
+CTRL-Z                  ":stop!" と同じ
+ 起動方法 
+vim [options]           空のバッファで編集開始
+vim [options] {file ..} ファイルの編集開始(複数ファイル指定可能)
+vim [options] -t {tag}  指定タグの含まれるファイルを編集する
+vim [options] -e [fname] QuickFix mode で編集開始,最初のエラーを表示する
+ 起動オプション 
++[num]                  指定行から編集を開始する(デフォルトで最終行から)
++/{pat} {file ..}       最初にパターンの現れた行から編集を開始する
+-v                      View モード(read-only) -n の機能も含む
+-b                      バイナリーモード
+-r                      .swp ファイルから編集中のファイルを復活させる
+-n                      .swp ファイルを作らない
+-o [N]                  N 個のウィンドウを開いて起動する
+-x                      do not restart VIM to open a window (for e.g. mail)
+-s {scriptin}           最初にコマンドスクリプトファイルを読み込ませる
+-w {scriptout}          タイプしたキーを全部スクリプトファイルに書き出す
+-T {terminal}           termcap のターミナル名を指定する
+-d {device}             open {device} to be used as a console (Vimでは未使用)
+
+ ファイル単位の自動オプション設定 
+vim:{set-arg}: ..       ファイルの先頭または最終行にsetコマンドで指定できる
+                        オプションを書くことができる(モード行)
+ マルチウィンドウ機能 
+CTRL-W s  or :split     ウィンドウを2つに分ける
+:split <file>           分割したウィンドウにファイルを読み込む
+CTRL-W ]                ウィンドウを分割してカーソル位置のタグジャンプする
+CTRL-W f                ウィンドウを分割してカーソル位置のファイルを読み込む
+CTRL-W n  or :new       空の新しいウィンドウを開く
+CTRL-W q  or :q[uit]    ウィンドウを閉じて編集を中止する
+CTRL-W c  or :cl[ose]   ウィンドウを閉じる(編集バッファは残る)
+CTRL-W o  or :o[nly]    カレント以外のウィンドウを全部閉じる
+
+CTRL-W j                下のウィンドウに移動する
+CTRL-W k                上のウィンドウに移動する
+CTRL-W CTRL-W           次のウィンドウに進む
+CTRL-W p                前のウィンドウに戻る
+
+CTRL-W r                ウィンドウの位置を交換する
+CTRL-W R                ウィンドウの位置を交換する(逆回転)
+CTRL-W x                次のウィンドウと位置を交換する
+
+CTRL-W =                全部のウィンドウの大きさを同じにする
+CTRL-W -                カレントウィンドウを小さくする
+CTRL-W +                カレントウィンドウを広げる
+CTRL-W _                カレントウィンドウの大きさを最大まで広げる
+ バッファリスト機能 
+:buffers  or :files     バッファとファイル名を全部表示する
+
+:ball     or :sball     全部のバッファを編集状態にする
+:unhide   or :sunhide   全部の空でないバッファを表に出す
+
+カレントウィンドウ     新ウィンドウ
+:[N]buffer [N]       :[N]sbuffer [N]       to arg/buf N
+:[N]bnext [N]        :[N]sbnext [N]        to Nth next arg/buf
+:[N]bNext [N]        :[N]sbNext [N]        to Nth previous arg/buf
+:[N]bprevious [N]    :[N]sbprevious [N]    to Nth previous arg/buf
+:brewind             :sbrewind             to first arg/buf
+:blast               :sblast               to last arg/buf
+:[N]bmod [N]         :[N]sbmod [N]         to Nth modified buf
+
+:bunload[!] [N]          unload buffer [N] from memory
+:bdelete[!] [N]          unload buffer [N] and delete it from the buffer list

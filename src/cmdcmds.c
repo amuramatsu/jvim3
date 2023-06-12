@@ -14,6 +14,9 @@
 #include "globals.h"
 #include "proto.h"
 #include "param.h"
+#ifdef KANJI
+#include "kanji.h"
+#endif
 
 #if defined(LATTICE) || defined(NT)
 # define mktemp(a)	tmpnam(a)
@@ -338,7 +341,13 @@ doshell(cmd)
 
 	windgoto((int)Rows - 1, 0);
 	cursor_on();
+#ifdef KANJI
+	cmd = kanjiconvsto(cmd, toupper(JP_SYS), TRUE);
 	(void)call_shell(cmd, 0, TRUE);
+	free(cmd);
+#else
+	(void)call_shell(cmd, 0, TRUE);
+#endif
 
 #ifdef AMIGA
 	wait_return(term_console ? -1 : TRUE);		/* see below */
@@ -394,6 +403,9 @@ dofilter(line1, line2, buff, do_in, do_out)
 	char_u		otmp[TMPNAMELEN];
 #endif
 	linenr_t 	linecount;
+#ifdef KANJI
+	char_u		code;
+#endif
 
 	/*
 	 * Disallow shell commands from .exrc and .vimrc in current directory for
@@ -438,6 +450,10 @@ dofilter(line1, line2, buff, do_in, do_out)
  * This is a trade off between showing the command and not scrolling the
  * text one line up (problem on slow terminals).
  */
+#ifdef KANJI
+	code = *curbuf->b_p_jc;
+	*curbuf->b_p_jc = tolower(JP_SYS);
+#endif
 	must_redraw = CLEAR;		/* screen has been shifted up one line */
 	++no_wait_return;			/* don't call wait_return() while busy */
 	if (do_in && buf_write(curbuf, itmp, NULL, line1, line2, FALSE, 0, FALSE) == FAIL)
@@ -445,6 +461,9 @@ dofilter(line1, line2, buff, do_in, do_out)
 		msg_outchar('\n');					/* keep message from writeit() */
 		--no_wait_return;
 		(void)emsg2(e_notcreate, itmp);		/* will call wait_return */
+#ifdef KANJI
+		*curbuf->b_p_jc = code;
+#endif
 		return;
 	}
 	if (!do_out)
@@ -497,7 +516,13 @@ dofilter(line1, line2, buff, do_in, do_out)
 	cursor_on();
 			/* errors are ignored, so you can see the error
 			   messages from the command; use 'u' to fix the text */
+#ifdef KANJI
+	buff = kanjiconvsto(IObuff, toupper(JP_SYS), TRUE);
+	(void)call_shell(buff, 1, FALSE);
+	free(buff);
+#else
 	(void)call_shell(IObuff, 1, FALSE);
+#endif
 
 	if (do_out)
 	{
@@ -527,6 +552,9 @@ error:
 		--no_wait_return;
 		wait_return(FALSE);
 	}
+#ifdef KANJI
+	*curbuf->b_p_jc = code;
+#endif
 	updateScreen(CLEAR);		/* do this before messages below */
 
 	if (linecount > p_report)

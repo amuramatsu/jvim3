@@ -259,8 +259,10 @@ fm_getname(fmark)
 	if (fmark->fnum != curbuf->b_fnum)				/* not current file */
 	{
 		name = buflist_nr2name(fmark->fnum);
+#if 0
 		if (name == NULL)
 			return (char_u *)"-unknown-";
+#endif
 		return name;
 	}
 	return (char_u *)"-current-";

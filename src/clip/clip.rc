@@ -1,0 +1,39 @@
+#include <winver.h>
+#include <winnt.h>
+#include <winuser.h>
+
+vim       ICON      "vim.ico"
+
+LANGUAGE LANG_JAPANESE, SUBLANG_DEFAULT
+#pragma code_page(932)
+
+VS_VERSION_INFO		VERSIONINFO
+	FILEVERSION		2,1,1,0
+	PRODUCTVERSION	2,1,1,0
+	FILEFLAGSMASK	VS_FFI_FILEFLAGSMASK
+	FILEFLAGS		0L
+	FILEOS          VOS__WINDOWS32
+	FILETYPE        VFT_APP
+	FILESUBTYPE     VFT2_UNKNOWN
+BEGIN
+	BLOCK	"StringFileInfo"
+	BEGIN
+		BLOCK	"041104B0"
+		BEGIN
+			VALUE "Comments",			"clip"
+			VALUE "FileDescription",    "clip 2.1a"
+			VALUE "FileVersion",        "02.01.00.00"
+			VALUE "ProductVersion",     "02.01.00.00"
+			VALUE "InternalName",       "clip"
+			VALUE "OriginalFilename",   "clip"
+			VALUE "ProductName",        "Vi IMproved 3.0/JVim 3.0-j2.1a"
+			VALUE "LegalCopyright",     "Ken'ichi Tsuchida"
+		END
+	END
+	BLOCK	"VarFileInfo"
+	BEGIN
+		VALUE "Translation", 0x0411, 0x04b0
+	END
+END
+
+//BuildVer:	1

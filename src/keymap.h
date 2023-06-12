@@ -18,10 +18,14 @@
  * for special characters. If this is changed also change the numbers in
  * term.h and main.c.
  */
-#ifdef MSDOS
-# define K_OFF 0x30
+#ifdef KANJI
+#  define K_OFF (0x101+'@'-0x80)
 #else
-# define K_OFF 0x00
+# ifdef MSDOS
+#  define K_OFF 0x30
+# else
+#  define K_OFF 0x00
+# endif
 #endif
 
 #define K_CCIRCM		0x1e	/* control circumflex */
@@ -68,5 +72,11 @@
  * NULs cannot be in the input string, therefore CTRL-@ is replaced by K_ZERO.
  * K_NUL is used for MSDOS extended keys (same value used in term.h).
  */
+#ifdef KANJI
+#define K_SPECIAL		(0xff)			/* special key follows */
+#define K_NUL			(0xfd)			/* for MSDOS: special key follows */
+#define K_ZERO			(0xa0)			/* replaces ^@ */
+#else
 #define K_NUL			(K_OFF + 0x9e)	/* for MSDOS: special key follows */
 #define K_ZERO			(K_OFF + 0x9f)	/* replaces ^@ */
+#endif

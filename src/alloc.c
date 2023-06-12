@@ -16,6 +16,9 @@
 #include "vim.h"
 #include "globals.h"
 #include "proto.h"
+#ifdef KANJI
+#include "kanji.h"
+#endif
 
 /*
  * Some memory is reserved for error messages and for being able to
@@ -43,7 +46,7 @@ lalloc(size, message)
 	static int	releasing = FALSE;	/* don't do mf_release_all() recursive */
 	int			try_again;
 
-#ifdef MSDOS
+#if defined(MSDOS) && !defined(NT)
 	if (size >= 0xfff0)			/* in MSDOS we can't deal with >64K blocks */
 		p = NULL;
 	else
@@ -97,6 +100,10 @@ strsave(string)
 {
 	char_u *p;
 
+#ifndef notdef
+	if (string == NULL)
+		string = "";
+#endif
 	p = alloc((unsigned) (STRLEN(string) + 1));
 	if (p != NULL)
 		STRCPY(p, string);
@@ -110,6 +117,10 @@ strnsave(string, len)
 {
 	char_u *p;
 
+#ifndef notdef
+	if (string == NULL)
+		string = "";
+#endif
 	p = alloc((unsigned) (len + 1));
 	if (p != NULL)
 	{
@@ -162,7 +173,7 @@ nofreeNULL(x)
 }
 #endif
 
-#ifdef BSD_UNIX
+#if defined(BSD_UNIX) && !defined(__bsdi__)
 	char *
 bsdmemset(ptr, c, size)
 	char	*ptr;
@@ -172,7 +183,7 @@ bsdmemset(ptr, c, size)
 	register char *p = ptr;
 
 	while (size-- > 0)
-		*p++ = c;
+		*p++ = (char)c;
 	return ptr;
 }
 #endif
@@ -222,6 +233,19 @@ vim_strnicmp(s1, s2, len)
 {
 	while (len)
 	{
+#ifdef KANJI
+		if (ISkanji(*s1) != ISkanji(*s2))
+			return 1;						/* this character different */
+		if (ISkanji(*s1))
+		{
+			if (s1[0] != s2[0] || s1[1] != s2[1])
+				return 1;					/* this character different */
+			++s1;
+			++s2;
+			--len;
+		}
+		else
+#endif
 		if (TO_UPPER(*s1) != TO_UPPER(*s2))
 			return 1;						/* this character different */
 		if (*s1 == NUL)
@@ -229,6 +253,33 @@ vim_strnicmp(s1, s2, len)
 		++s1;
 		++s2;
 		--len;
+	}
+	return 0;								/* strings match */
+}
+
+	int
+vim_stricmp(s1, s2)
+	char	*s1;
+	char	*s2;
+{
+	while (*s1)
+	{
+#ifdef KANJI
+		if (ISkanji((char_u)*s1) != ISkanji((char_u)*s2))
+			return 1;						/* this character different */
+		if (ISkanji((char_u)*s1))
+		{
+			if (s1[0] != s2[0] || s1[1] != s2[1])
+				return 1;					/* this character different */
+			++s1;
+			++s2;
+		}
+		else
+#endif
+		if (TO_UPPER(*s1) != TO_UPPER(*s2))
+			return 1;						/* this character different */
+		++s1;
+		++s2;
 	}
 	return 0;								/* strings match */
 }

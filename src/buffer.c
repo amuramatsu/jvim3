@@ -28,6 +28,12 @@
 #include "globals.h"
 #include "proto.h"
 #include "param.h"
+#ifdef KANJI
+#include "kanji.h"
+#endif
+#if defined(USE_EXFILE) && defined(NT)
+# undef remove
+#endif
 
 static void		enter_buffer __ARGS((BUF *));
 static BUF		*buflist_findname __ARGS((char_u *));
@@ -69,6 +75,64 @@ open_buffer()
 	}
 	if (curbuf->b_filename != NULL)
 	{
+#ifdef FEXRC
+		if (p_fexrc)
+		{
+			char_u			tmp[MAXPATHL];
+			char_u		*	dotp = NULL;
+			char_u		*	p = NULL;
+
+# ifdef NT
+			NoResize = TRUE;
+# endif
+			p = curbuf->b_filename;
+			while (*p)
+			{
+				if (*p == '.')
+					dotp = p;
+# ifdef KANJI
+				else if (ISkanji(*p))
+					p++;
+# endif
+				p++;
+			}
+			if (dotp == curbuf->b_filename)
+				dotp = NULL;
+			STRCPY(tmp, SYSVIMRC_FILE);
+			if (dotp != NULL)
+				STRCAT(tmp, dotp);
+			if (dosource(tmp) == FAIL && dotp != NULL)
+				(void)dosource((char_u *)SYSVIMRC_FILE);
+			if (fullpathcmp((char_u *)SYSVIMRC_FILE, (char_u *)VIMRC_FILE))
+			{
+				if (p_exrc)
+				{
+					STRCPY(tmp, VIMRC_FILE);
+					if (dotp != NULL)
+						STRCAT(tmp, dotp);
+# ifdef UNIX
+					{
+						struct stat s;
+#  ifdef KANJI
+						if (stat(fileconvsto(tmp), &s) || s.st_uid != getuid())
+#  else
+						if (stat(tmp, &s) || s.st_uid != getuid())
+#  endif
+							secure = p_secure;
+					}
+# else
+					secure = p_secure;
+# endif
+					if (dosource(tmp) == FAIL && dotp != NULL)
+						dosource((char_u *)VIMRC_FILE);
+					secure = 0;
+				}
+			}
+# ifdef NT
+			NoResize = FALSE;
+# endif
+		}
+#endif
 		if (readfile(curbuf->b_filename, curbuf->b_sfilename, (linenr_t)0,
 										TRUE, (linenr_t)0, MAXLNUM) == FAIL)
 			return FAIL;
@@ -116,6 +180,18 @@ close_buffer(buf, free_buf, remove)
 			lastbuf = buf->b_prev;
 		else
 			buf->b_next->b_prev = buf->b_prev;
+#ifdef KANJI
+		free(buf->b_p_jc);
+#endif
+#ifdef FEPCTRL
+		free(buf->b_p_ji);
+#endif
+#ifdef TRACK
+		free(buf->b_p_trs);
+#endif
+#if defined(KANJI) && defined(NT) && defined(SYNTAX)
+		syn_clr(buf);
+#endif
 		free(buf);
 	}
 	else
@@ -131,7 +207,7 @@ buf_clear(buf)
 {
 	buf->b_ml.ml_line_count = 1;
 	buf->b_changed = FALSE;
-#ifndef MSDOS
+#if !defined(MSDOS) || defined(NT)
 	buf->b_shortname = FALSE;
 #endif
 	buf->b_p_eol = TRUE;
@@ -247,8 +323,26 @@ do_buffer(action, start, dir, count, forceit)
 			retval = doecmd(NULL, NULL, NULL, FALSE, (linenr_t)1);
 				/* the doecmd() may create a new buffer, then we have to
 				 * delete the old one */
+#if 1
+			{
+				BUF			*wbuf;
+				int			empty = FALSE;
+
+				for (wbuf = firstbuf; wbuf != NULL; wbuf = wbuf->b_next)
+				{
+					if (wbuf == buf)
+					{
+						empty = TRUE;
+						break;
+					}
+				}
+				if (action == 3 && buf != curbuf && empty)
+					close_buffer(buf, TRUE, action == 3);
+			}
+#else
 			if (action == 3 && buf != curbuf)
 				close_buffer(buf, TRUE, action == 3);
+#endif
 			return retval;
 		}
 		/*
@@ -293,7 +387,20 @@ enter_buffer(buf)
 
 	if (buf->b_neverloaded)
 	{
+#if 1
+		BUF			*wbuf;
+
+		for (wbuf = firstbuf; wbuf != NULL; wbuf = wbuf->b_next)
+		{
+			if (wbuf == curbuf)
+			{
+				buf_copy_options(curbuf, buf);
+				break;
+			}
+		}
+#else
 		buf_copy_options(curbuf, buf);
+#endif
 		buf->b_neverloaded = FALSE;
 	}
 	curwin->w_buffer = buf;
@@ -395,7 +502,7 @@ buflist_new(fname, sfname, lnum, use_curbuf)
 	{
 		if (curbuf != NULL)		/* don't do this for first buffer */
 			buf_copy_options(curbuf, buf);
-	
+
 		/*
 		 * put new buffer at the end of the buffer list
 		 */
@@ -532,6 +639,10 @@ buflist_nr2name(n)
 	if (buf == NULL)
 		return NULL;
 	fname = did_cd ? buf->b_filename : buf->b_sfilename;
+#if 1
+	if (fname == NULL)
+		return NULL;
+#endif
 	home_replace(fname, NameBuff, MAXPATHL);
 	return NameBuff;
 }
@@ -545,7 +656,7 @@ buflist_setlnum(buf, lnum)
 	linenr_t	lnum;
 {
 	WINLNUM		*wlp;
-	
+
 	for (wlp = buf->b_winlnum; wlp != NULL; wlp = wlp->wl_next)
 		if (wlp->wl_win == curwin)
 			break;
@@ -731,7 +842,7 @@ setfname(fname, sfname, message)
 	else
 		curbuf->b_xfilename = curbuf->b_sfilename;
 
-#ifndef MSDOS
+#if !defined(MSDOS) || defined(NT)
 	curbuf->b_shortname = FALSE;
 #endif
 	return OK;
@@ -821,6 +932,62 @@ fileinfo(fullname)
 		IObuff[0] = '"';
 	}
 
+#ifdef KANJI
+	{
+		char_u	*p		= ml_get(curwin->w_cursor.lnum);
+		int		pcol	= getvcol(curwin, &curwin->w_cursor, 3) + 1;
+		int		lastcol = STRLEN(p);
+		int		code	= *ml_get_cursor() & 0xff;
+		FPOS	last;
+		char_u	k1, k2;
+
+		last.lnum = curwin->w_cursor.lnum;
+		last.col  = lastcol;
+		lastcol   = getvcol(curwin, &last, 3);
+		if (ISkanjiCur() == 1)
+		{
+			k1 = code;
+			k2 = p[curwin->w_cursor.col+1];
+			kanjito(&k1, &k2, toupper(*curbuf->b_p_jc));
+			code = (k1 << 8) | k2;
+			--pcol;
+		}
+# ifdef UCODE
+		else if (toupper(*curbuf->b_p_jc) == JP_WIDE)	/* UNICODE */
+		{
+			k1 = code;
+			kanato(&k1, &k2, toupper(*curbuf->b_p_jc));
+			code = (k1 << 8) | k2;
+		}
+# endif
+		else if (ISkana(code))
+		{
+			k1 = code;
+			kanato(&k1, &k2, toupper(*curbuf->b_p_jc));
+			if (k2)
+				code = (k1 << 8) | k2;
+			else
+				code = k1;
+		}
+		else if (code == 0x0a)		/* Ctrl('J') */
+		{
+			code = 0x00;
+		}
+		sprintf((char *)IObuff + STRLEN(IObuff),
+					"\"%s%s%s line %ld of %ld --%d%%-- col %d/%d ch 0x%x [%c]",
+				curbuf->b_changed ? " [Modified]" : "",
+				curbuf->b_notedited ? " [Not edited]" : "",
+				curbuf->b_p_ro ? " [readonly]" : "",
+				(long)curwin->w_cursor.lnum,
+				(long)curbuf->b_ml.ml_line_count,
+				(int)(((long)curwin->w_cursor.lnum * 100L) / (long)curbuf->b_ml.ml_line_count),
+				pcol,
+				lastcol,
+				code,
+				toupper(*curbuf->b_p_jc)
+		);
+	}
+#else
 	sprintf((char *)IObuff + STRLEN(IObuff),
 						"\"%s%s%s line %ld of %ld --%d%%-- col %d",
 			curbuf->b_changed ? " [Modified]" : "",
@@ -830,6 +997,7 @@ fileinfo(fullname)
 			(long)curbuf->b_ml.ml_line_count,
 			(int)(((long)curwin->w_cursor.lnum * 100L) / (long)curbuf->b_ml.ml_line_count),
 			(int)curwin->w_cursor.col + 1);
+#endif
 
 	if (arg_count > 1)
 		sprintf((char *)IObuff + STRLEN(IObuff), " (file %d of %d)", curwin->w_arg_idx + 1, arg_count);
@@ -886,7 +1054,22 @@ maketitle()
 	void
 resettitle()
 {
+#ifdef KANJI
+	char_u	*	t = NULL;
+	char_u	*	i = NULL;
+
+	if (lasttitle != NULL)
+		t = kanjiconvsto(lasttitle, toupper(JP_DISP), TRUE);
+	if (lasticon != NULL)
+		i = kanjiconvsto(lasticon, toupper(JP_DISP), TRUE);
+	mch_settitle(t, i);
+	if (t != NULL)
+		free(t);
+	if (i != NULL)
+		free(i);
+#else
 	mch_settitle(lasttitle, lasticon);
+#endif
 }
 
 /*
@@ -898,11 +1081,24 @@ fix_fname(fname)
 {
 	if (fname != NameBuff)			/* if not already expanded */
 	{
+#ifdef KANJI
+		fname = fileconvsto(fname);
+#endif
 		if (!isFullName(fname))
 		{
 			(void)FullName(fname, NameBuff, MAXPATHL);
 			fname = NameBuff;
 		}
+#if defined(KANJI) && !defined(AMIGA)
+		else
+		{
+			STRCPY(NameBuff, fname);
+			fname = NameBuff;
+		}
+#endif
+#if !defined(notdef) && defined(NT)
+		fname_case(fname);
+#endif
 #ifdef AMIGA
 		else
 		{
@@ -910,6 +1106,9 @@ fix_fname(fname)
 			fname = NameBuff;
 			fname_case(fname);			/* set correct case for filename */
 		}
+#endif
+#ifdef KANJI
+		STRCPY(fname, fileconvsfrom(fname));
 #endif
 	}
 	return fname;
@@ -981,7 +1180,7 @@ do_buffer_all(all)
 /*
  * count number of desired windows
  */
-	win_count = 0; 
+	win_count = 0;
 	for (buf = firstbuf; buf != NULL; buf = buf->b_next)
 		if (all || buf->b_ml.ml_mfp != NULL)
 			++win_count;

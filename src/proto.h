@@ -27,6 +27,21 @@
 #ifdef MSDOS
 # include "proto/msdos.pro"
 #endif
+#ifdef KANJI
+# include "proto/kanji.pro"
+#endif
+#ifdef TRACK
+# include "proto/track.pro"
+#endif
+#ifdef FEPCTRL
+# include "proto/fepctrl.pro"
+#endif
+#ifdef XARGS
+# include "proto/xargs.pro"
+#endif
+#if defined(KANJI) && defined(NT) && defined(SYNTAX)
+# include "proto/syntax.pro"
+#endif
 
 #include "proto/alloc.pro"
 #include "proto/buffer.pro"

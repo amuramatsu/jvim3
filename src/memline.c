@@ -42,7 +42,7 @@
 
 /*
  * The following functions are available to work with a memline:
- * 
+ *
  * ml_open()			open a new memline for a buffer
  * ml_close()			close the memline for a buffer
  * ml_close_all()		close all memlines
@@ -62,6 +62,9 @@
  * ml_clearmarked()		clear all line marks (for :global command)
  */
 
+#ifdef MSDOS
+# include <io.h>		/* for lseek(), must be before vim.h */
+#endif
 #include "vim.h"
 #include "globals.h"
 #include "proto.h"
@@ -126,7 +129,7 @@ struct data_block
 
 /*
  * The low bits of db_index hold the actual index. The topmost bit is
- * used for the global command to be able to mark a line. 
+ * used for the global command to be able to mark a line.
  * This method is not clean, but otherwise there would be at least one extra
  * byte used for each line.
  * The mark has to be in this place to keep it with the correct line when other
@@ -258,7 +261,11 @@ ml_open()
 	if (curbuf->b_filename != NULL)
 	{
 		STRNCPY(b0p->b0_fname, curbuf->b_filename, (size_t)1000);
+#ifdef KANJI
+		if (stat(fileconvsto(curbuf->b_filename), &st) != -1)
+#else
 		if (stat((char *)curbuf->b_filename, &st) != -1)
+#endif
 			b0p->b0_mtime = st.st_mtime;
 		else
 			b0p->b0_mtime = 0;
@@ -281,6 +288,9 @@ ml_open()
 	mf_put(mfp, hp, TRUE, FALSE);
 	curbuf->b_ml.ml_flags = ML_EMPTY;
 
+#if defined(NT) && defined(USE_EXFILE) && defined(USE_SHARE_CHECK)
+	ef_share_open(curbuf->b_filename);
+#endif
 	return OK;
 
 error:
@@ -363,6 +373,12 @@ ml_close(buf)
 		free(buf->b_ml.ml_line_ptr);
 	free(buf->b_ml.ml_stack);
 	buf->b_ml.ml_mfp = NULL;
+#if defined(NT) && defined(USE_EXFILE) && defined(USE_SHARE_CHECK)
+	ef_share_close(buf->b_filename);
+#endif
+#if defined(NT) && defined(USE_HISTORY)
+	win_history_append(buf);
+#endif
 }
 
 /*
@@ -403,7 +419,11 @@ ml_timestamp(buf)
 	}
 		/* copy filename again, it may have been changed */
 	STRNCPY(b0p->b0_fname, buf->b_filename, (size_t)1000);
+#ifdef KANJI
+	if (stat(fileconvsto(buf->b_filename), &st) != -1)
+#else
 	if (stat((char *)buf->b_filename, &st) != -1)
+#endif
 		b0p->b0_mtime = st.st_mtime;
 error:
 	mf_put(mfp, hp, TRUE, FALSE);
@@ -445,6 +465,10 @@ ml_recover()
  * Otherwise ".swp" is appended.
  */
 	fname = curbuf->b_xfilename;
+#ifndef	notdef		/* NT coredumped */
+	len = 0;
+	if (fname)
+#endif
 	len = STRLEN(fname);
 	if (len >= 4 && vim_strnicmp(fname + len - 4, (char_u *)".sw", (size_t)3) == 0)
 	{
@@ -545,8 +569,13 @@ ml_recover()
  * check date of swap file and original file
  */
 	if (curbuf->b_filename != NULL &&
+#ifdef kANJI
+			stat(fileconvsto(curbuf->b_filename), &org_stat) != -1 &&
+			((stat(fileconvsto(fname), &swp_stat) != -1 &&
+#else
 			stat((char *)curbuf->b_filename, &org_stat) != -1 &&
 			((stat((char *)fname, &swp_stat) != -1 &&
+#endif
 			org_stat.st_mtime > swp_stat.st_mtime) ||
 			org_stat.st_mtime != b0p->b0_mtime))
 	{
@@ -694,7 +723,7 @@ ml_recover()
 						has_error = TRUE;
 						dp->db_txt_end = page_count * mfp->mf_page_size;
 					}
-						
+
 						/* make sure there is a NUL at the end of the block */
 					*((char_u *)dp + dp->db_txt_end - 1) = NUL;
 
@@ -788,8 +817,13 @@ ml_sync_all(check_file)
 			 * if original file does not exist anymore or has been changed
 			 * call ml_preserve to get rid of all negative numbered blocks
 			 */
+#ifdef KANJI
+			if (stat(fileconvsto(buf->b_filename), &st) == -1 ||
+								st.st_mtime != buf->b_mtime)
+#else
 			if (stat((char *)buf->b_filename, &st) == -1 ||
 								st.st_mtime != buf->b_mtime)
+#endif
 				ml_preserve(buf, FALSE);
 		}
 		if (buf->b_ml.ml_mfp->mf_dirty)
@@ -831,7 +865,7 @@ ml_preserve(buf, message)
 	ml_flush_line(buf);								/* flush buffered line */
 	(void)ml_find_line(buf, (linenr_t)0, ML_FLUSH);	/* flush locked block */
 	status = mf_sync(mfp, TRUE, FALSE);
-		
+
 			/* stack is invalid after mf_sync(.., TRUE, ..) */
 	buf->b_ml.ml_stack_top = 0;
 
@@ -874,8 +908,8 @@ theend:
 }
 
 /*
- * get a pointer to a (read-only copy of a) line 
- * 
+ * get a pointer to a (read-only copy of a) line
+ *
  * On failure an error message is given and IObuff is returned (to avoid
  * having to check for error everywhere).
  */
@@ -999,10 +1033,18 @@ ml_append_int(buf, lnum, line, len, newfile)
 	int			newfile;		/* flag, see above */
 {
 	int			i;
+#if 0	/* ken */
 	int			line_count;		/* number of indexes in current block */
+#else
+	linenr_t	line_count;		/* number of indexes in current block */
+#endif
 	int			offset;
 	int			from, to;
+#if 0	/* ken */
 	int			space_needed;	/* space needed for new line */
+#else
+	colnr_t		space_needed;	/* space needed for new line */
+#endif
 	int			page_size;
 	int			page_count;
 	int			db_idx;			/* index for lnum in data block */
@@ -1015,7 +1057,7 @@ ml_append_int(buf, lnum, line, len, newfile)
 
 	if (lnum > buf->b_ml.ml_line_count)	/* lnum out of range */
 		return FAIL;
-	
+
 	if (lowest_marked && lowest_marked > lnum)
 		lowest_marked = lnum + 1;
 
@@ -1187,7 +1229,11 @@ ml_append_int(buf, lnum, line, len, newfile)
  * The line counts in the pointer blocks have already been adjusted by
  * ml_find_line().
  */
+#if 0	/* ken */
 		int			line_count_left, line_count_right;
+#else
+		linenr_t	line_count_left, line_count_right;
+#endif
 		int			page_count_left, page_count_right;
 		BHDR		*hp_left;
 		BHDR		*hp_right;
@@ -1947,7 +1993,7 @@ ml_new_data(mfp, negative, page_count)
 
 	if ((hp = mf_new(mfp, negative, page_count)) == NULL)
 		return NULL;
-	
+
 	dp = (DATA_BL *)(hp->bh_data);
 	dp->db_id = DATA_ID;
 	dp->db_txt_start = dp->db_txt_end = page_count * mfp->mf_page_size;
@@ -1969,7 +2015,7 @@ ml_new_ptr(mfp)
 
 	if ((hp = mf_new(mfp, FALSE, 1)) == NULL)
 		return NULL;
-	
+
 	pp = (PTR_BL *)(hp->bh_data);
 	pp->pb_id = PTR_ID;
 	pp->pb_count = 0;
@@ -2341,11 +2387,15 @@ findswapname(buf, second_try)
 			fname = NULL;
 			break;
 		}
-		
+
 		/*
 		 * check if the scriptfile already exists
 		 */
+#ifdef KANJI
+		if (getperm(fileconvsto(fname)) < 0)		/* it does not exist */
+#else
 		if (getperm(fname) < 0)		/* it does not exist */
+#endif
 		{
 #ifdef AMIGA
 			fh = Open((UBYTE *)fname, (long)MODE_NEWFILE);
@@ -2398,16 +2448,25 @@ findswapname(buf, second_try)
 			if (!recoverymode && buf->b_xfilename != NULL)
 			{
 						/* call wait_return if not done by emsg() */
+#ifdef notdef	/* ken */
 				if (EMSG2(".swp file exists: An edit of file \"%s\" may not have been finished", buf->b_xfilename))
 				{
 					msg_outchar('\n');
 					wait_return(FALSE);		/* do call wait_return now */
 				}
+#endif
 			}
 		}
 
 		if (fname[n - 1] == 'a')	/* tried enough names, give up */
 		{
+#ifndef notdef	/* ken */
+			if (EMSG2(".swp file exists: An edit of file \"%s\" may not have been finished", buf->b_xfilename))
+			{
+				msg_outchar('\n');
+				wait_return(FALSE);		/* do call wait_return now */
+			}
+#endif
 			free(fname);
 			fname = NULL;
 			break;

@@ -112,11 +112,22 @@ typedef unsigned long	long_u;
 
 #ifdef __TURBOC__
 # define __ARGS(x) x
+# define __PARMS(x)	x
+#endif
+#ifdef __BORLANDC__
+# define __ARGS(x) x
+# define __PARMS(x)	x
 #endif
 
 #if defined(MSDOS) && !defined(NT)
 # include <dos.h>
 # include <dir.h>
+#endif
+#if defined(MSDOS) && defined(NT) && defined(__BORLANDC__)
+# include <dir.h>
+#endif
+#if __TURBOC__ >= 0x500
+# include <wtypes.h>
 #endif
 
 #ifdef SOLARIS
@@ -129,7 +140,7 @@ typedef unsigned long	long_u;
 #  undef M_XENIX
 #  include <sys/ndir.h>		/* for MAXNAMLEN */
 # else
-#  if defined(SOLARIS) || defined(AIX) || defined(ARCHIE)
+#  if defined(SOLARIS) || defined(AIX) || defined(ARCHIE)  || __FreeBSD__ >= 3 || __CYGWIN__ || defined(__bsdi__)
 #   include <dirent.h>		/* for MAXNAMLEN */
 #  else
 #   include <sys/dir.h>		/* for MAXNAMLEN */
@@ -169,6 +180,15 @@ typedef unsigned long	long_u;
   extern void *malloc();
 # endif
 #endif /* __STDC__ */
+
+#if defined(_MSC_VER) && (_MSC_VER >= 1000)
+# ifndef __ARGS
+#  define __ARGS(x)  x
+# endif
+# ifndef __PARMS
+#  define __PARMS(x) x
+# endif
+#endif
 
 #ifndef __ARGS
 #define __ARGS(x)	()
@@ -276,7 +296,7 @@ typedef unsigned long	long_u;
 /*
  * Buffer sizes
  */
-#ifdef UNIX		/* Unix has plenty of memory */
+#if defined(UNIX) || defined(NT)		/* Unix has plenty of memory */
 # define CMDBUFFSIZE	1024	/* size of the command processing buffer */
 #else
 # define CMDBUFFSIZE	256		/* size of the command processing buffer */
@@ -288,7 +308,7 @@ typedef unsigned long	long_u;
 
 #define	TERMBUFSIZE	1024
 
-#ifdef linux
+#if defined(linux) || defined(__CYGWIN__)
 # define TBUFSZ 2048			/* buffer size for termcap entry */
 #else
 # define TBUFSZ 1024			/* buffer size for termcap entry */
@@ -300,7 +320,11 @@ typedef unsigned long	long_u;
 #ifdef UNIX
 # define MAXPATHL	1024		/* Unix has long paths and plenty of memory */
 #else
+# if 0
 # define MAXPATHL	128			/* not too long to put name on stack */
+# else
+# define MAXPATHL	260			/* WIN-NT or WIN-95 later max 260 char */
+# endif
 #endif
 
 #ifdef MSDOS
@@ -376,4 +400,14 @@ typedef unsigned		colnr_t;	/* column number type */
 
 #ifdef UNIX
 # include "unix.h"
+#endif
+
+#ifdef _WIN32
+# include <windows.h>
+# undef   DELETE
+#endif
+
+#if defined(USE_EXFILE) && defined(NT)
+# include "exfile.h"
+# undef   DELETE
 #endif

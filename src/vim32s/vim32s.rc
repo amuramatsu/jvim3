@@ -1,0 +1,53 @@
+#include <winver.h>
+#include <winnt.h>
+#include <winuser.h>
+#define IDC_STATIC	(-1)
+
+vim       ICON      "vim.ico"
+
+LANGUAGE LANG_JAPANESE, SUBLANG_DEFAULT
+#pragma code_page(932)
+
+VS_VERSION_INFO		VERSIONINFO
+	FILEVERSION		2,1,1,0
+	PRODUCTVERSION	2,1,1,0
+	FILEFLAGSMASK	VS_FFI_FILEFLAGSMASK
+	FILEFLAGS		0L
+	FILEOS          VOS__WINDOWS32
+	FILETYPE        VFT_APP
+	FILESUBTYPE     VFT2_UNKNOWN
+BEGIN
+	BLOCK	"StringFileInfo"
+	BEGIN
+		BLOCK	"041104B0"
+		BEGIN
+			VALUE "Comments",			"launcher"
+			VALUE "FileDescription",    "launcher 2.1a"
+			VALUE "FileVersion",        "02.01.00.00"
+			VALUE "ProductVersion",     "02.01.00.00"
+			VALUE "InternalName",       "launcher"
+			VALUE "OriginalFilename",   "launcher"
+			VALUE "ProductName",        "Vi IMproved 3.0/JVim 3.0-j2.1a"
+			VALUE "LegalCopyright",     "Ken'ichi Tsuchida"
+		END
+	END
+	BLOCK	"VarFileInfo"
+	BEGIN
+		VALUE "Translation", 0x0411, 0x04b0
+	END
+END
+
+SELECT DIALOG DISCARDABLE  0, 0, 127, 41
+STYLE DS_MODALFRAME | DS_SETFOREGROUND | DS_3DLOOK | DS_CENTER | WS_POPUP | 
+    WS_CAPTION
+CAPTION "SELECT APPLICATION"
+FONT 9, "ÇlÇr ÇoÉSÉVÉbÉN"
+BEGIN
+    DEFPUSHBUTTON   "OK",1,9,22,34,14
+    PUSHBUTTON      "∑¨›æŸ",2,48,22,34,14
+    COMBOBOX        1000,5,5,118,56,CBS_DROPDOWN | CBS_AUTOHSCROLL | 
+                    WS_VSCROLL | WS_TABSTOP
+    PUSHBUTTON      "éQè∆",1003,87,22,34,14
+END
+
+//BuildVer:	1

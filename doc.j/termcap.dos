@@ -1,0 +1,276 @@
+#=======================================================================
+#
+#  TERMCAP for jstevie, Ng, Demacs, MEmacs, JVim and jrogue
+#				     Original: July 5, 1994 (Junn Ohta)
+#				Last modified: Sep 28, 1995 (K.Tsuchida)
+#=======================================================================
+
+# NOTE:
+# (1) If your Demacs doesn't work fine, insert following one line AT
+#     THE TOP of ansi entry (i.e. just before the :co#80: line).
+#	:bs@:km:bc=\E[D:le=\E[D:\
+#
+# (2) Local capabilities are incorporated for jrogue, as below:
+#	Cf str	set foreground color (1 parameter: 0 to 7)
+#	Cb str	set background color (1 parameter: 0 to 7)
+#	Ri str	initialize sequence for jrogue
+#	Re str	terminate sequence for jrogue
+#	KL str	type of kanji line-character (pc98 or jis83)
+#	xc bool	cursor doesn't reflect the attribute of the point (kterm)
+
+#=======================================================================
+#  Generic terminals
+#=======================================================================
+
+#-----------------------------------------------------------------------
+#  ANSI terminal
+#-----------------------------------------------------------------------
+sx|ansi|ANSI terminal:\
+	:co#80:li#24:am:bs:pt:bl=^G:le=^H:do=^J:cr=^M:\
+	:cl=\E[2J\E[H:ce=\E[K:cd=\E[J:sc=\E[s:rc=\E[u:\
+	:cm=\E[%i%d;%dH:ho=\E[H:ll=\E[24;1H:\
+	:up=\E[A:do=\E[B:nd=\E[C:ri=\E[C:le=\E[D:\
+	:UP=\E[%dA:DO=\E[%dB:RI=\E[%dC:LE=\E[%dD:\
+	:sf=\ED:sr=\EM:al=\E[L:dl=\E[M:AL=\E[%dL:DL=\E[%dM:\
+	:ic=\E[@:dc=\E[P:IC=\E[%d@:DC=\E[%dP:\
+	:im=\E[4h:ei=\E[4l:\
+	:so=\E[7m:se=\E[m:us=\E[4m:ue=\E[m:\
+	:mb=\E[5m:md=\E[1m:mr=\E[7m:mh=\E[2m:me=\E[m:
+
+#-----------------------------------------------------------------------
+#  DEC VT100 terminal
+#-----------------------------------------------------------------------
+d0|vt100|DEC VT100:\
+	:sc=\E7:rc=\E8:ti=\E(B\E)0:as=^N:ae=^O:\
+	:xn:xo:vt#3:cs=\E[%i%d;%dr:\
+	:al@:dl@:AL@:DL@:ic@:dc@:IC@:DC@:im@:ei@:\
+	:tc=ansi:
+
+#-----------------------------------------------------------------------
+#  DEC VT52 terminal
+#-----------------------------------------------------------------------
+dw|vt52|DEC VT52:\
+	:co#80:li#24:bs:pt:le=^H:do=^J:cr=^M:\
+	:cl=\EH\EJ:ce=\EK:cd=\EJ:\
+	:ho=\EH:cm=\EY%+ %+ :\
+	:up=\EA:do=\EB:le=\ED:ri=\EC:nd=\EC:\
+	:sr=\EI:as=\EF:ae=\EG:
+
+#-----------------------------------------------------------------------
+#  Kterm on X Window with color
+#-----------------------------------------------------------------------
+kt|kterm|kterm on X Window with color:\
+	:co#80:li#24:am:bs:hs:es:pt:xn:bl=^G:le=^H:do=^J:cr=^M:\
+	:cl=\E[H\E[2J:ce=\E[K:cd=\E[J:sc=\E7:rc=\E8:\
+	:cm=\E[%i%d;%dH:ho=\E[H:ll=\E[24;1H:\
+	:up=\E[A:nd=\E[C:ri=\E[C:\
+	:UP=\E[%dA:DO=\E[%dB:RI=\E[%dC:LE=\E[%dD:\
+	:sf=\ED:sr=\EM:al=\E[L:dl=\E[M:AL=\E[%dL:DL=\E[%dM:\
+	:ic=\E[@:dc=\E[P:IC=\E[%d@:DC=\E[%dP:\
+	:so=\E[7m:se=\E[m:us=\E[4m:ue=\E[m:\
+	:mb=\E[5m:md=\E[1m:mr=\E[7m:mh=\E[2m:me=\E[m:\
+	:cs=\E[%i%d;%dr:ae=^O:as=^N:st=\EH:ct=\E[3g:\
+	:ts=\E[?E\E[?%i%dT:fs=\E[?F:ds=\E[?E:\
+	:ks=\E[?1h\E=:ke=\E[?1l\E>:\
+	:k1=\EOP:k2=\EOQ:k3=\EOR:k4=\EOS:k5=\EOt:\
+	:k6=\EOu:k7=\EOv:k8=\EOl:k9=\EOw:k0=\EOy:\
+	:ku=\EOA:kd=\EOB:kr=\EOC:kl=\EOD:\
+	:r1=\E>\E[1;3;4;5;6l\E[?7h\E[m\E[r\E[2J\E[H:\
+	:Cf=\E[3%dm:Cb=\E[3%d;7m:Ri=\E[?5h:Re=\E[?5l:KL=jis83:xc:
+
+#=======================================================================
+#  MS/PC-DOS terminals
+#=======================================================================
+
+#-----------------------------------------------------------------------
+#  NEC PC-9801 series
+#-----------------------------------------------------------------------
+p9|pc98|pc9801|NEC PC-9801:\
+	:vi=\E[>5h:vs=\E[>5l:ve=\E[>5l:\
+	:Cf=\E[3%dm:Cb=\E[4%dm:Ri=\E)0\E[>3l\E[>1h:Re=\E[>1l:KL=pc98:\
+	:xn:im@:ei@:ic@:dc@:IC@:DC@:\
+	:tc=ansi:
+
+#-----------------------------------------------------------------------
+#  NEC PC-9801 series - cyan reverse, yellow underline
+#-----------------------------------------------------------------------
+px|pc98-c|pc9801-c|NEC PC-9801:\
+	:so=\E[46m:us=\E[33;4m:mr=\E[46m:\
+	:tc=pc98:
+
+#-----------------------------------------------------------------------
+#  NEC PC-9801 series - 25 line mode
+#-----------------------------------------------------------------------
+py|pc98-25|pc9801-25|NEC PC-9801 25 line:\
+	:li#25:ll=\E[25;1H:\
+	:ti=\E[>1h:te=\E[>1l:\
+	:tc=pc98:
+
+#-----------------------------------------------------------------------
+#  Toshiba J3100 with Japanese DOS 3.1 (much like PC-9801)
+#-----------------------------------------------------------------------
+j3|j3100|Toshiba J3100:\
+	:vi=\E[>5h:vs=\E[>5l:ve=\E[>5l:\
+	:Cf=\E[3%d;40m:Cb=\E[30;4%dm:KL=jis83:\
+	:xn:im@:ei@:ic@:dc@:IC@:DC@:\
+	:tc=ansi:
+
+#-----------------------------------------------------------------------
+#  AX machines with ANSIJ.SYS, or Toshiba J3100 with English DOS
+#-----------------------------------------------------------------------
+ax|j3100e|AX machines:\
+	:li#25:ll=\E[25;1H:\
+	:vi=\E[>5h:vs=\E[>5l:ve=\E[>5l:\
+	:Cf=\E[3%d;40m:Cb=\E[30;4%dm:KL=jis83:\
+	:xn:sf@:sr@:ic@:dc@:IC@:DC@:im@:ei@:\
+	:tc=ansi:
+
+#-----------------------------------------------------------------------
+#  Fujitsu FMR series and FM-Towns (MS-DOS)
+#-----------------------------------------------------------------------
+fm|fmr|towns|Fujitsu FMR and FM-Towns:\
+	:ho=\E[;H:cl=\E[2J\E[;H:\
+	:ce=\ET:cd=\EY:al=\EE:dl=\ER:\
+	:vi=\E[1v:vs=\E[0v:ve=\E[0v:\
+	:Cf=\E[3%dm:Cb=\E[3%d;7m:KL=jis83:\
+	:xn:sf@:sr@:AL@:DL@:ic@:dc@:IC@:DC@:im@:ei@:\
+	:tc=ansi:
+
+#-----------------------------------------------------------------------
+#  OKI if-800 model 60 (pesimistic assumption)
+#-----------------------------------------------------------------------
+if|if800|if-800|if-800 model 60:\
+	:vi=\E0:vs=\E1:ve=\E1:\
+	:Cf=\E[3%dm:Cb=\E[3%d;7m:KL=jis83:\
+	:xn:sf@:sr@:al@:dl@:AL@:DL@:ic@:dc@:IC@:DC@:im@:ei@:\
+	:tc=ansi:
+
+#-----------------------------------------------------------------------
+#  DOS/V with $IAS.SYS, IBM 5550, IBM PS/55 with JDOS
+#-----------------------------------------------------------------------
+dz|dosv|ibm5550|ps55:\
+	:Cf=\E[3%d;40m:Cb=\E[30;4%dm:\
+	:xn:cd@:us@:ue@:\
+	:sf@:sr@:al@:dl@:AL@:DL@:ic@:dc@:IC@:DC@:im@:ei@:\
+	:tc=ansi:
+
+#-----------------------------------------------------------------------
+#  IBM-PC with ANSI.SYS, DOS/V without $IAS.SYS, OS/2 with ANSI on
+#-----------------------------------------------------------------------
+pc|ibmpc|ibmpc-ansi|os2|OS2|ANSI.SYS:\
+	:li#25:ll=\E[25;1H:\
+	:Cf=\E[3%d;40m:Cb=\E[30;4%dm:\
+	:xn:cd@:us@:ue@:\
+	:sf@:sr@:al@:dl@:AL@:DL@:ic@:dc@:IC@:DC@:im@:ei@:\
+	:tc=ansi:
+
+#-----------------------------------------------------------------------
+#  IBM-PC with NANSI.SYS or ZANSI.SYS
+#-----------------------------------------------------------------------
+na|nansi|zansi|ibmpc-nansi|ibmpc-zansi|NANSI or ZANSI.SYS:\
+	:li#25:ll=\E[25;1H:\
+	:Cf=\E[3%d;40m:Cb=\E[30;4%dm:\
+	:xn:cd@:us@:ue@:im@:ei@:\
+	:tc=ansi:
+
+#-----------------------------------------------------------------------
+#  IBM-PC with NNANSI.SYS
+#-----------------------------------------------------------------------
+nn|nnansi|ibmpc-nnansi|NNANSI.SYS:\
+	:li#25:ll=\E[25;1H:\
+	:Cf=\E[3%d;40m:Cb=\E[30;4%dm:\
+	:xn:im@:ei@:\
+	:tc=ansi:
+
+#-----------------------------------------------------------------------
+#  IBM-PC with BIOS control
+#-----------------------------------------------------------------------
+pb|pcbios|PC-AT BIOS:\
+	:li#25:Cf=\E[3%d;40m:Cb=\E[30;4%dm:\
+	:xn@:cd@:us@:ue@:pt@:sr@:\
+	:sf@:al@:dl@:AL@:DL@:ic@:dc@:IC@:DC@:im@:ei@:\
+	:kd=#P:kh=#G:kH=#O:kI=#R:kl=#K:kN=#Q:kP=#I:kr=#M:ku=#H:\
+	:k1=#;:k2=#<:k3=#=:k4=#>:k5=#?:k6=#@:k7=#A:k8=#B:k9=#C:k0=#D:\
+	:s1=#T:s2=#U:s3=#V:s4=#W:s5=#X:s6=#Y:s7=#Z:s8=#[:s9=#\\:s0=#]:\
+	:cm=\E[%i%d;%dH:\
+	:%1=#L:\
+	:tc=ansi:
+
+#-----------------------------------------------------------------------
+#  WIN-95 with ANSI.SYS
+#-----------------------------------------------------------------------
+win|win95|windows-95|windows95:\
+	:li#25:Cf=\E[3%d;40m:Cb=\E[30;4%dm:\
+	:so=\E[0;37m:se=\E[1;37m:us=\E[4m:ue=\E[m:\
+	:tc=ansi:
+
+#-----------------------------------------------------------------------
+#  WIN-95 with ANSI.SYS
+#-----------------------------------------------------------------------
+win-c|win95-c|windows95-c:\
+	:li#25:Cf=\E[3%d;40m:Cb=\E[30;4%dm:\
+	:so=\E[0;37m:se=\E[1;37m:us=\E[4m:ue=\E[m:\
+	:tc=ansi:
+
+#=======================================================================
+#  Miscellaneous
+#=======================================================================
+
+#-----------------------------------------------------------------------
+#  Sharp X68000 (not tested yet)
+#-----------------------------------------------------------------------
+
+x6|x68000|x68k|Sharp Personal Workstation X68000:\
+	:am:bs:km:pt:xn:co#96:li#31:tw#8:it#8:\
+	:bl=^G:le=^H:ta=^I:do=^J:nl=^J:cr=^M:\
+	:cl=\E[2J:cd=\E[J:ce=\E[K:\
+	:ho=\E[H:up=\E[A:nd=\E[C:cm=\E[%i%d;%dH:\
+	:UP=\E[%dA:DO=\E[%dB:RI=\E[%dC:LE=\E[%dD:\
+	:al=\E[L:dl=\E[M:AL=\E[%dL:DL=\E[%dM:\
+	:sf=\ED:sr=\EM:sc=\E[s:rc=\E[u:\
+	:so=\E[7m:se=\E[m:us=\E[1m:ue=\E[m:\
+	:md=\E[1m:mr=\E[7m:me=\E[m:\
+	:vi=\E[>5h:ve=\E[>5l:vs=\E[>5h:\
+	:GS=\033)3:GE=\033)0:\
+	:GV=\226:GH=\225:GU=\220:GD=\221:GL=\222:GR=\223:\
+	:G1=\231:G2=\230:G3=\232:G4=\233:GC=\217:\
+	:kb=^H:PU=\ES:PD=\ET:PL=\EU:PR=\EV:\
+	:CO=\E[>5l:CF=\E[>5h:\
+	:Cf=\E[3%dm:Cb=\E[3%d;7m:
+
+#-----------------------------------------------------------------------
+#  Atari ST
+#-----------------------------------------------------------------------
+at|atari|Atari ST:\
+	:tc=vt52:
+
+#-----------------------------------------------------------------------
+#  Commodore AMIGA
+#-----------------------------------------------------------------------
+am|amiga|AMIGA:\
+	:tc=vt100:
+
+#-----------------------------------------------------------------------
+#  Hardcopy terminal
+#-----------------------------------------------------------------------
+su|dumb:\
+	:co#80:do=^J:cr=^M:nl=^M^J:bl=^G:am:
+
+#-----------------------------------------------------------------------
+#  Debugging entry
+#-----------------------------------------------------------------------
+de|debug:\
+	:co#80:li#24:am:bs:xn:bl=<bl>:le=<le>:do=^J:cr=^M:\
+	:cl=<cl>:ce=<ce>:cd=<cd>:sc=<sc>:rc=<rc>:\
+	:cm=<cm=%d,%d>:ho=<ho>:ll=<ll>:\
+	:up=<up>:nd=<nd>:ri=<ri>:\
+	:UP=<UP=%d>:DO=<DO=%d>:RI=<RI=%d>:LE=<LE=%d>:\
+	:sf=<sf>:sr=<sr>:SF=<SF=%d>:SR=<SR=%d>:\
+	:al=<al>:dl=<dl>:AL=<AL=%d>:DL=<DL=%d>:\
+	:ic=<ic>:dc=<dc>:IC=<IC=%d>:DC=<DC=%d>:\
+	:cs=<cs=%d,%d>:im=<im>:ei=<ei>:\
+	:so=<so>:se=<se>:us=<us>:ue=<ue>:\
+	:mb=<mb>:md=<md>:mr=<mr>:mh=<mh>:me=<me>:\
+	:is=<is>:rs=<rs>:ti=<ti>:te=<te>:ks=<ks>:ke=<ke>:\
+	:vi=<vi>:vs=<vs>:ve=<ve>:vb=<vb>:\
+	:Cf=<Cf=%d>:Cb=<Cb=%d>:Ri=<Ri>:Re=<Re>:

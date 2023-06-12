@@ -19,6 +19,12 @@
 #include "globals.h"
 #include "proto.h"
 #include "param.h"
+#ifdef KANJI
+#include "kanji.h"
+#endif
+#ifndef notdef
+# define isidchar(_a)	isabchar(_a)
+#endif
 
 /*
  * structure used to store one block of the stuff/redo/macro buffers
@@ -113,6 +119,11 @@ static void		init_typestr __ARGS((void));
 static void		gotchars __ARGS((char_u *, int));
 static int		vgetorpeek __ARGS((int));
 static void		showmap __ARGS((struct mapblock *));
+#ifdef KANJI
+static int		show_special __ARGS((char_u *, int));
+static char_u * put_special __ARGS((char_u *));
+static int		convert_special __ARGS((char_u *));
+#endif
 
 /*
  * free and clear a buffer
@@ -150,8 +161,17 @@ get_bufcont(buffer, dozero)
 		if ((count || dozero) && (p = lalloc(count + 1, TRUE)) != NULL)
 		{
 				*p = NUL;
+#if 0
 				for (bp = buffer->bh_first.b_next; bp != NULL; bp = bp->b_next)
 						strcat((char *)p, (char *)bp->b_str);
+#else
+				count = 0;
+				for (bp = buffer->bh_first.b_next; bp != NULL; bp = bp->b_next)
+				{
+					strcpy((char *)&p[count], (char *)bp->b_str);
+					count += STRLEN((char *)bp->b_str);
+				}
+#endif
 		}
 		return (p);
 }
@@ -272,6 +292,10 @@ read_stuff(advance)
 
 	curr = stuffbuff.bh_first.b_next;
 	c = curr->b_str[stuffbuff.bh_index];
+#ifdef NT
+	if (GuiWin)
+		breakcheck();
+#endif
 
 	if (advance)
 	{
@@ -706,7 +730,11 @@ openscript(name)
 	{
 		if (scriptin[curscript] != NULL)	/* already reading script */
 			++curscript;
+#ifdef KANJI
+		if ((scriptin[curscript] = fopen(fileconvsto(name), READBIN)) == NULL)
+#else
 		if ((scriptin[curscript] = fopen((char *)name, READBIN)) == NULL)
+#endif
 		{
 			emsg2(e_notopen, name);
 			if (curscript)
@@ -769,12 +797,58 @@ updatescript(c)
 	int
 vgetc()
 {
+#ifdef KANJI
+	int				c;
+# if defined(FEPCTRL) && (defined(CANNA) || defined(ONEW))
+	static int		FepIn = FALSE;
+
+	if (FepIn == FALSE && curbuf->b_p_fc && fep_get_mode()
+													&& read_stuff(FALSE) == NUL)
+	{
+		FepIn = TRUE;
+		while (1)
+		{
+			if (fep_isready())
+			{
+				FepIn = FALSE;
+				c = fep_getkey() & 0xff;
+				if (c == K_SPECIAL)
+					return(0x100 + (vgetorpeek(TRUE) & 0xff));
+				return(c);
+			}
+#  ifdef ONEW
+			fep_inject(0);
+#  else
+			if (!canna_empty)
+				canna_echoback();
+			c = vgetorpeek(TRUE) & 0xff;
+			if (c == K_SPECIAL)
+				c = 0x100 + (vgetorpeek(TRUE) & 0xff);
+			fep_inject(c);
+#  endif
+		}
+	}
+# endif
+	c = vgetorpeek(TRUE) & 0xff;
+# if defined(FEPCTRL) && (defined(CANNA) || defined(ONEW))
+	if (FepIn == FALSE && c == K_SPECIAL)
+# else
+	if (c == K_SPECIAL)
+# endif
+		return(0x100 + (vgetorpeek(TRUE) & 0xff));
+	return(c);
+#else
 	return (vgetorpeek(TRUE));
+#endif
 }
 
 	int
 vpeekc()
 {
+#if defined(FEPCTRL) && (defined(CANNA) || defined(ONEW))
+	if (curbuf->b_p_fc && fep_get_mode() && read_stuff(FALSE) == NUL)
+		return(NUL);
+#endif
 	return (vgetorpeek(FALSE));
 }
 
@@ -816,6 +890,10 @@ vgetorpeek(advance)
 			{
 				len = STRLEN(typestr);
 				breakcheck();				/* check for CTRL-C */
+#ifdef NT
+				if (got_int && GuiWin && ((State & NORMAL) && VIsual.lnum != 0))
+					got_int = FALSE;
+#endif
 				if (got_int)
 				{
 					c = inchar(typestr, MAXMAPLEN, 0);	/* flush all input */
@@ -851,6 +929,9 @@ vgetorpeek(advance)
 							&& !((State & (INSERT + CMDLINE)) && p_paste)
 							&& !(State == HITRETURN && (typestr[0] == CR || typestr[0] == ' ')))
 					{
+#ifdef NT
+						if (!(GuiWin && NoMap))
+#endif
 						for (mp = maplist.m_next; mp; mp = mp->m_next)
 						{
 							if ((mp->m_mode & ABBREV) || !(mp->m_mode & State))
@@ -941,6 +1022,19 @@ vgetorpeek(advance)
 							c = -1;
 							break;
 						}
+#ifdef NT
+						if (GuiWin && (State & CMDLINE)
+								&& ((mp->m_mode & (INSERT + CMDLINE)) == INSERT + CMDLINE)
+								&& strcmp(mp->m_str, "gV") == 0)
+						{
+							extern int	 cmdfirstc; 	/* ':', '/' or '?' */
+							if (cmdfirstc != ':')
+								wincmd_paste();
+							else
+								ins_typestr("", TRUE);
+						}
+						else
+#endif
 						if (ins_typestr(mp->m_str, mp->m_noremap) == FAIL)
 						{
 							c = -1;
@@ -976,7 +1070,16 @@ vgetorpeek(advance)
 									curwin->w_col = 0;
 							}
 							else
+#ifdef KANJI
+							{
 								--curwin->w_col;
+								if (ISkanjiCol(curwin->w_cursor.lnum,
+														curwin->w_col) == 2)
+									--curwin->w_col;
+							}
+#else
+								--curwin->w_col;
+#endif
 						}
 						else if (curwin->w_p_wrap && curwin->w_row)
 						{
@@ -1107,6 +1210,11 @@ domap(maptype, keys, mode)
  */
 	while (*p)
 	{
+#ifdef KANJI
+		if (convert_special(p))
+			p++;
+		else
+#endif
 		if (*p == Ctrl('V') && p[1] != NUL)
 			STRCPY(p, p + 1);			/* remove CTRL-V */
 		++p;
@@ -1117,6 +1225,9 @@ domap(maptype, keys, mode)
  */
 	if (haskey)
 	{
+#ifdef KANJI
+		convert_special(keys);
+#else
 		if (*keys == '#' && isdigit(*(keys + 1)))	/* function key */
 		{
 			if (*++keys == '0')
@@ -1124,6 +1235,7 @@ domap(maptype, keys, mode)
 			else
 				*keys += K_F1 - '1';
 		}
+#endif
 		len = STRLEN(keys);
 		if (len > MAXMAPLEN)			/* maximum lenght of MAXMAPLEN chars */
 			return 1;
@@ -1134,9 +1246,19 @@ domap(maptype, keys, mode)
 		 */
 		if (abbrev)
 		{
+#ifdef KANJI
+			if (ISkanjiPointer(keys, keys + len - 1))
+				;
+			else
+#endif
 			if (!isidchar(*(keys + len - 1)))		/* does not end in id char */
 				return 1;
 			for (n = 0; n < len - 2; ++n)
+#ifdef KANJI
+				if (ISkanjiPointer(keys, keys + n) || ISkanjiPointer(keys, keys + len - 2))
+					;
+				else
+#endif
 				if (isidchar(*(keys + n)) != isidchar(*(keys + len - 2)))
 					return 1;
 		}
@@ -1293,7 +1415,11 @@ showmap(mp)
 		msg_outstr((char_u *)"i ");
 	else if (mp->m_mode & CMDLINE)
 		msg_outstr((char_u *)"c ");
+#ifdef KANJI
+	len = show_special(mp->m_keys, -1);	/* get length of what we have written */
+#else
 	len = msg_outtrans(mp->m_keys, -1);	/* get length of what we have written */
+#endif
 	do
 	{
 		msg_outchar(' ');				/* padd with blanks */
@@ -1335,13 +1461,30 @@ check_abbr(c, ptr, col, mincol)
 	if (no_abbr_cnt)		/* abbrev. are not recursive */
 		return FALSE;
 
+#ifdef KANJI
+	if (col && ISkanjiPointer(ptr, &ptr[col - 1]))
+		;
+	else
+#endif
 	if (col == 0 || !isidchar(ptr[col - 1]))	/* cannot be an abbr. */
 		return FALSE;
 
+#ifdef KANJI
+	if (col > 1)
+		is_id = isidchar(ptr[col - 2]);
+	for (len = col - 1; len > 0; --len)
+		if (ISkanjiPointer(ptr, &ptr[len - 1]))
+			;
+		else if (!isspace(ptr[len - 1]) && is_id == isidchar(ptr[len - 1]))
+			;
+		else
+			break;
+#else
 	if (col > 1)
 		is_id = isidchar(ptr[col - 2]);
 	for (len = col - 1; len > 0 && !isspace(ptr[len - 1]) &&
 								is_id == isidchar(ptr[len - 1]); --len)
+#endif
 		;
 
 	if (len < mincol)
@@ -1369,6 +1512,19 @@ check_abbr(c, ptr, col, mincol)
 			(void)ins_typestr(tb, TRUE);					/* insert the last typed char */
 			(void)ins_typestr(mp->m_str, mp->m_noremap);	/* insert the to string */
 			no_abbr_cnt += STRLEN(mp->m_str) + j;	/* no abbrev. for these chars */
+#ifdef KANJI
+			{
+				int		k;
+				int		cnt = 0;
+				for (k = 0; k < len; k++)
+				{
+					if (ISkanji(ptr[k]))
+						k++;
+					cnt++;
+				}
+				len = cnt;
+			}
+#endif
 			while (len--)
 				(void)ins_typestr((char_u *)"\b", TRUE);	/* delete the from string */
 			return TRUE;
@@ -1458,6 +1614,24 @@ putescstr(fd, str, set)
 		 * A space has to be escaped with a backslash to
 		 * prevent it to be misinterpreted in doset().
 		 */
+#ifdef KANJI
+		if (!set && *str == K_SPECIAL)
+		{
+			char_u	*	p = put_special(str);
+
+			if (p != NULL)
+			{
+				while (*p)
+				{
+					if (putc(*p, fd) < 0)
+						return FAIL;
+					p++;
+				}
+				str++;
+				continue;
+			}
+		}
+#endif
 		if (*str < ' ' || *str > '~' || (*str == ' ' && !set))
 		{
 			if (putc(Ctrl('V'), fd) < 0)
@@ -1473,3 +1647,126 @@ putescstr(fd, str, set)
 	}
 	return OK;
 }
+
+#ifdef KANJI
+static struct {
+	char			*	name;
+	int_u				key;
+} special_keys[] = {
+	{	"#[UP]",		K_UARROW	},
+	{	"#[U]",			K_UARROW	},
+	{	"#[DOWN]",		K_DARROW	},
+	{	"#[D]",			K_DARROW	},
+	{	"#[LEFT]",		K_LARROW	},
+	{	"#[L]",			K_LARROW	},
+	{	"#[RIGHT]",		K_RARROW	},
+	{	"#[R]",			K_RARROW	},
+	{	"#[SUP]",		K_SUARROW	},
+	{	"#[SDOWN]",		K_SDARROW	},
+	{	"#[SLEFT]",		K_SLARROW	},
+	{	"#[SRIGHT]",	K_SRARROW	},
+	{	"#[F01]",		K_F1		},
+	{	"#[F02]",		K_F2		},
+	{	"#[F03]",		K_F3		},
+	{	"#[F04]",		K_F4		},
+	{	"#[F05]",		K_F5		},
+	{	"#[F06]",		K_F6		},
+	{	"#[F07]",		K_F7		},
+	{	"#[F08]",		K_F8		},
+	{	"#[F09]",		K_F9		},
+	{	"#[F10]",		K_F10		},
+	{	"#[F11]",		K_SF1		},
+	{	"#[F12]",		K_SF2		},
+	{	"#[F13]",		K_SF3		},
+	{	"#[F14]",		K_SF4		},
+	{	"#[F15]",		K_SF5		},
+	{	"#[F16]",		K_SF6		},
+	{	"#[F17]",		K_SF7		},
+	{	"#[F18]",		K_SF8		},
+	{	"#[F19]",		K_SF9		},
+	{	"#[F20]",		K_SF10		},
+	{	"#[HELP]",		K_HELP		},
+	{	"#[UNDO]",		K_UNDO		},
+	{	"#1",			K_F1		},
+	{	"#2",			K_F2		},
+	{	"#3",			K_F3		},
+	{	"#4",			K_F4		},
+	{	"#5",			K_F5		},
+	{	"#6",			K_F6		},
+	{	"#7",			K_F7		},
+	{	"#8",			K_F8		},
+	{	"#9",			K_F9		},
+	{	"#0",			K_F10		},
+	{	NULL,			0			},
+};
+
+static int
+show_special(keys, len)
+	char_u	*keys;
+	int		 len;
+{
+	int				i;
+	char_u			buf[CMDBUFFSIZE + 1];
+	char_u		*	p;
+	char_u		*	w;
+
+	p = buf;
+	while (*keys)
+	{
+		if (*keys == K_SPECIAL)
+		{
+			for (w = NULL, i = 0; special_keys[i].key != 0; i++)
+			{
+				if ((special_keys[i].key & 0xff) == keys[1])
+				{
+					w = special_keys[i].name;
+					while (*w)
+						*p++ = *w++;
+					break;
+				}
+			}
+			if (w != NULL)
+			{
+				keys += 2;
+				continue;
+			}
+		}
+		*p++ = *keys++;
+	}
+	*p = NUL;
+	return(msg_outtrans(buf, len));
+}
+
+static char_u *
+put_special(keys)
+	char_u	*keys;
+{
+	int				i;
+
+	for (i = 0; special_keys[i].key != 0; i++)
+	{
+		if ((special_keys[i].key & 0xff) == keys[1])
+			return(special_keys[i].name);
+	}
+	return(NULL);
+}
+
+static int
+convert_special(keys)
+	char_u	*keys;
+{
+	int				i;
+
+	for (i = 0; special_keys[i].name != NULL; i++)
+	{
+		if (strncmp(special_keys[i].name, keys, strlen(special_keys[i].name)) == 0)
+		{
+			*keys = K_SPECIAL;
+			keys[1] = special_keys[i].key & 0xff;
+			STRCPY(&keys[2], &keys[strlen(special_keys[i].name)]);
+			return(1);
+		}
+	}
+	return(0);
+}
+#endif

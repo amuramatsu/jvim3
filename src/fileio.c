@@ -29,18 +29,33 @@
 #ifdef LATTICE
 # include <proto/dos.h>		/* for Lock() and UnLock() */
 #endif
+#ifdef KANJI
+#include "kanji.h"
+#endif
 
 #define BUFSIZE		8192			/* size of normal write buffer */
 #define SBUFSIZE	256				/* size of emergency write buffer */
 
 static int  write_buf __ARGS((int, char_u *, int));
 static void do_mlines __ARGS((void));
+#ifdef USE_OPT
+static char_u *opt_delet	__ARGS((char_u *, int, int, int, int, int, int, int));
+#endif
+#if defined(NT) && defined(USE_EXFILE) && defined(USE_MATOME)
+static int			do_encode	= FALSE;
+static char_u	*	encode_name	= NULL;
+static BUF		*	encode_buf;
+#endif
 
 	void
 filemess(name, s)
 	char_u		*name;
 	char_u		*s;
 {
+#if defined(NT) && defined(USE_EXFILE) && defined(USE_MATOME)
+	if (DoMatome)
+		return;
+#endif
 		/* careful: home_replace calls vimgetenv(), which also uses IObuff! */
 	home_replace(name, IObuff + 1, IOSIZE - 1);
 	IObuff[0] = '"';
@@ -107,6 +122,12 @@ readfile(fname, sfname, from, newfile, skip_lnum, nlines)
 	int					textmode = curbuf->b_p_tx;		/* accept CR-LF for line break */
 	struct stat			st;
 	int					readonly;
+#ifdef KANJI
+	char_u				*code = curbuf->b_p_jc;
+# ifdef USE_OPT
+	int					tail = FALSE;
+# endif
+#endif
 
 	/*
 	 * If there is no file name yet, use the one for the read file.
@@ -135,7 +156,11 @@ readfile(fname, sfname, from, newfile, skip_lnum, nlines)
 	 * On Unix it is possible to read a directory, so we have to
 	 * check for it before the open().
 	 */
+# ifdef KANJI
+	perm = getperm(fileconvsto(fname));
+# else
 	perm = getperm(fname);
+# endif
 # ifdef _POSIX_SOURCE
 	if (perm >= 0 && !S_ISREG(perm))				/* not a regular file */
 # else
@@ -157,7 +182,15 @@ readfile(fname, sfname, from, newfile, skip_lnum, nlines)
 	if (newfile && !readonlymode)			/* default: set file not readonly */
 		curbuf->b_p_ro = FALSE;
 
+#ifdef KANJI
+# if defined(NT) && defined(USE_EXFILE)
+	if (newfile && ef_stat(fileconvsto(fname), &st) != -1)
+# else
+	if (newfile && stat(fileconvsto(fname), &st) != -1)
+# endif
+#else
 	if (newfile && stat((char *)fname, &st) != -1)	/* remember time of file */
+#endif
 		curbuf->b_mtime = st.st_mtime;
 	else
 		curbuf->b_mtime = 0;
@@ -168,14 +201,28 @@ readfile(fname, sfname, from, newfile, skip_lnum, nlines)
  */
 	readonly = FALSE;
 #ifdef UNIX
+# ifdef KANJI
+	if (!(perm & 0222) || access(fileconvsto(fname), 2))
+		readonly = TRUE;
+	fd = open(fileconvsto(fname), O_RDONLY);
+# else
 	if (!(perm & 0222) || access((char *)fname, 2))
 		readonly = TRUE;
 	fd = open((char *)fname, O_RDONLY);
+# endif
 #else
+# ifdef KANJI
+	if (!newfile || readonlymode || (fd = open(fileconvsto(fname), O_RDWR)) < 0)
+# else
 	if (!newfile || readonlymode || (fd = open((char *)fname, O_RDWR)) < 0)
+# endif
 	{
 		readonly = TRUE;
+# ifdef KANJI
+		fd = open(fileconvsto(fname), O_RDONLY);	/* try to open ro */
+# else
 		fd = open((char *)fname, O_RDONLY);			/* try to open ro */
+# endif
 	}
 #endif
 
@@ -193,7 +240,11 @@ readfile(fname, sfname, from, newfile, skip_lnum, nlines)
 	/*
 	 * On MSDOS and Amiga we can't open a directory, check here.
 	 */
+# ifdef KANJI
+		if (isdir(fileconvsto(fname)) == TRUE)
+# else
 		if (isdir(fname) == TRUE)
+# endif
 			filemess(fname, (char_u *)"is a directory");
 		else
 #endif
@@ -201,12 +252,25 @@ readfile(fname, sfname, from, newfile, skip_lnum, nlines)
 #ifdef UNIX
 				if (perm < 0)
 #endif
+#if defined(NT) && defined(USE_EXFILE) && defined(USE_SHARE_CHECK)
+					if (ef_share_process(fname))
+					{
+						curbuf->b_p_ro = TRUE;
+						filemess(fname, (char_u *)"[Permission Denied]");
+					}
+					else
+						filemess(fname, (char_u *)"[New File]");
+#else
 					filemess(fname, (char_u *)"[New File]");
+#endif
 #ifdef UNIX
 				else
 					filemess(fname, (char_u *)"[Permission Denied]");
 #endif
 
+#if 0
+			*code = JP_FILE;
+#endif
 		return FAIL;
 	}
 	if (newfile && readonly)					/* set file readonly */
@@ -227,7 +291,7 @@ readfile(fname, sfname, from, newfile, skip_lnum, nlines)
 		 * The amount is limited by the fact that read() only can read
 		 * upto max_unsigned characters (and other things).
 		 */
-#if defined(AMIGA) || defined(MSDOS)
+#if (defined(AMIGA) || defined(MSDOS)) && !defined(NT)
 		if (sizeof(int) <= 2 && linerest >= 0x7ff0)
 		{
 			++split;
@@ -237,7 +301,7 @@ readfile(fname, sfname, from, newfile, skip_lnum, nlines)
 		else
 #endif
 		{
-#if !(defined(AMIGA) || defined(MSDOS))
+#if !(defined(AMIGA) || defined(MSDOS)) || defined(NT)
 			if (sizeof(int) > 2)
 				size = 0x10000L;				/* read 64K at a time */
 			else
@@ -261,13 +325,33 @@ readfile(fname, sfname, from, newfile, skip_lnum, nlines)
 			buffer = new_buffer;
 			ptr = buffer + linerest;
 			line_start = buffer;
-			
 			if ((size = read(fd, (char *)ptr, (size_t)size)) <= 0)
 			{
 				if (size < 0)				/* read error */
 					error = TRUE;
 				break;
 			}
+#ifdef KANJI
+			if (firstpart && isupper(*code))
+				*code = judge_jcode(code, &curbuf->b_p_ubig, ptr, size);
+# ifdef UCODE
+#  ifdef USE_OPT
+			if (!(p_opt & OPT_ORG_BINMODE) && curbuf->b_p_bin)
+				;
+			else
+#  endif
+			if (toupper(*code) == JP_WIDE)	/* UNICODE */
+				size = wide2multi(ptr, size, curbuf->b_p_ubig, firstpart);
+			/* MS UTF8 */
+			else if (firstpart && toupper(*code) == JP_UTF8
+					&& (ptr[0] == 0xef && ptr[1] == 0xbb && ptr[2] == 0xbf))
+			{
+				filesize += 3;			/* count the number of characters */
+				size -= 3;
+				memmove((char *)ptr, (char *)ptr + 3, size);
+			}
+# endif
+#endif
 			filesize += size;				/* count the number of characters */
 
 			/*
@@ -300,6 +384,40 @@ readfile(fname, sfname, from, newfile, skip_lnum, nlines)
 		--ptr;
 		while (++ptr, --size >= 0)
 		{
+#if defined(KANJI) && defined(USE_OPT)
+			if (!(p_opt & OPT_ORG_BINMODE) && curbuf->b_p_bin)
+			{
+				if ((ptr - line_start + 1) == 16)
+				{
+					char_u		tmp[81];
+
+					binaryconvsfrom(lnum, (char_u)toupper(*code), &tail, line_start, ptr - line_start + 1, tmp);
+					tmp[80] = NUL;	/* end of line */
+					if (ml_append(lnum, tmp, strlen(tmp) + 1, newfile) == FAIL)
+					{
+						error = TRUE;
+						break;
+					}
+					++lnum;
+					if (--nlines == 0)
+					{
+						error = TRUE;		/* break loop */
+						line_start = ptr;	/* nothing left to write */
+						break;
+					}
+					line_start = ptr + 1;
+				}
+				continue;
+			}
+#endif
+#ifdef USE_OPT
+			if (curbuf->b_p_opt & FOPT_MAC_FILE)
+			{
+				if ((c = *ptr) != NUL && c != NL && !(c == CR && ptr[1] != NL))
+					continue;
+			}
+			else
+#endif
 			if ((c = *ptr) != NUL && c != NL)	/* catch most common case */
 				continue;
 			if (c == NUL)
@@ -315,11 +433,48 @@ readfile(fname, sfname, from, newfile, skip_lnum, nlines)
 						ptr[-1] = NUL;
 						--len;
 					}
+#ifdef KANJI
+					{
+						char_u	*tmp;
+						colnr_t	 n;
+
+						n = len * 2 + 1;
+						if ((tmp = lalloc(n, TRUE)) == NULL)
+						{
+							error = TRUE;
+							break;
+						}
+						n = kanjiconvsfrom(line_start, len - 1,
+									tmp, n, NULL, (char_u)toupper(*code), NULL);
+						tmp[n] = NUL;	/* end of line */
+# ifdef USE_OPT
+						if (curbuf->b_p_opt & FOPT_EXTEND)
+						{
+							tmp = opt_delet(tmp, 'R',
+										curbuf->b_p_opt & FOPT_EXPAND_TAB,
+										curbuf->b_p_opt & FOPT_ENCODE_TAB,
+										curbuf->b_p_opt & FOPT_DEL_SPC,
+										curbuf->b_p_opt & FOPT_REP_SPC,
+										curbuf->b_p_opt & FOPT_GAIJI,
+										(int)curbuf->b_p_ts);
+							n = strlen(tmp);
+						}
+# endif
+						if (ml_append(lnum, tmp, n + 1, newfile) == FAIL)
+						{
+							free(tmp);
+							error = TRUE;
+							break;
+						}
+						free(tmp);
+					}
+#else
 					if (ml_append(lnum, line_start, len, newfile) == FAIL)
 					{
 						error = TRUE;
 						break;
 					}
+#endif
 					++lnum;
 					if (--nlines == 0)
 					{
@@ -358,14 +513,65 @@ readfile(fname, sfname, from, newfile, skip_lnum, nlines)
 		if (newfile && curbuf->b_p_bin)		/* remember for when writing */
 			curbuf->b_p_eol = FALSE;
 		*ptr = NUL;
+#ifdef KANJI
+		while (1)
+		{
+			char_u	*tmp;
+			int		n;
+
+# ifdef USE_OPT
+			if (!(p_opt & OPT_ORG_BINMODE) && curbuf->b_p_bin)
+			{
+				char_u		tmp[81];
+
+				binaryconvsfrom(lnum, (char_u)toupper(*code), &tail, line_start, ptr - line_start, tmp);
+				tmp[80] = NUL;	/* end of line */
+				if (ml_append(lnum, tmp, strlen(tmp) + 1, newfile) == FAIL)
+					error = TRUE;
+				else
+					++lnum;
+				incomplete = FALSE;
+				break;
+			}
+# endif
+			n = (ptr - line_start) * 2 + 1;
+			if ((tmp = lalloc(n, TRUE)) == NULL)
+			{
+				error = TRUE;
+				break;
+			}
+			n = kanjiconvsfrom(line_start, ptr - line_start,
+									tmp, n, NULL, (char_u)toupper(*code), NULL);
+			tmp[n] = NUL;	/* end of line */
+# ifdef USE_OPT
+			if (curbuf->b_p_opt & FOPT_EXTEND)
+			{
+				tmp = opt_delet(tmp, 'R',
+							curbuf->b_p_opt & FOPT_EXPAND_TAB,
+							curbuf->b_p_opt & FOPT_ENCODE_TAB,
+							curbuf->b_p_opt & FOPT_DEL_SPC,
+							curbuf->b_p_opt & FOPT_REP_SPC,
+							curbuf->b_p_opt & FOPT_GAIJI,
+							(int)curbuf->b_p_ts);
+				n = strlen(tmp);
+			}
+# endif
+			if (ml_append(lnum, tmp, n + 1, newfile) == FAIL)
+				error = TRUE;
+			else
+				lnum++;
+			free(tmp);
+			break;
+		}
+#else
 		if (ml_append(lnum, line_start, (colnr_t)(ptr - line_start + 1), newfile) == FAIL)
 			error = TRUE;
 		else
 			++lnum;
+#endif
 	}
 	if (lnum != from && !newfile)	/* added at least one line */
 		CHANGED;
-
 	close(fd);
 	free(buffer);
 
@@ -382,6 +588,19 @@ readfile(fname, sfname, from, newfile, skip_lnum, nlines)
 	screenclear();
 #endif
 
+#if defined(NT) && defined(USE_EXFILE) && defined(USE_MATOME)
+	if (strchr(p_dc, 'r'))
+	{
+		static int		oflg = TRUE;
+
+		if (oflg)
+		{
+			oflg = FALSE;
+			decode(TRUE, from + 1, curbuf->b_ml.ml_line_count - linecnt);
+			oflg = TRUE;
+		}
+	}
+#endif
 	linecnt = curbuf->b_ml.ml_line_count - linecnt;
 	if (!newfile)
 		mark_adjust(from + 1, MAXLNUM, (long)linecnt);
@@ -396,8 +615,16 @@ readfile(fname, sfname, from, newfile, skip_lnum, nlines)
 	home_replace(fname, IObuff + 1, IOSIZE - 1);
 	IObuff[0] = '"';
 	sprintf((char *)IObuff + STRLEN(IObuff),
+#ifdef KANJI
+					"\" %s%s%s%s%s%ld line%s, %ld character%s [%c]",
+#else
 					"\" %s%s%s%s%s%ld line%s, %ld character%s",
+#endif
+#if defined(NT) && defined(USE_EXFILE) && defined(USE_SHARE_CHECK)
+			curbuf->b_p_ro ? (ef_share_process(fname) ? "[READONLY] " : "[readonly] ") : "",
+#else
 			curbuf->b_p_ro ? "[readonly] " : "",
+#endif
 			incomplete ? "[Incomplete last line] " : "",
 			split ? "[long lines split] " : "",
 			error ? "[READ ERRORS] " : "",
@@ -407,7 +634,11 @@ readfile(fname, sfname, from, newfile, skip_lnum, nlines)
 			textmode ? "[textmode] " : "",
 #endif
 			(long)linecnt, plural((long)linecnt),
+#ifdef KANJI
+			filesize, plural(filesize), toupper(*code));
+#else
 			filesize, plural(filesize));
+#endif
 	msg(IObuff);
 
 	if (error && newfile)	/* with errors we should not write the file */
@@ -498,8 +729,10 @@ buf_write(buf, fname, sfname, start, end, append, forceit, reset_changed)
 	 * Avoids problems with networks and when directory names are changed.
 	 */
 	ffname = fname;							/* remember full fname */
+#if !defined(NT) || defined(notdef)
 	if (!did_cd)
 		fname = sfname;
+#endif
 
 	/*
 	 * Disallow writing from .exrc and .vimrc in current directory for
@@ -530,7 +763,11 @@ buf_write(buf, fname, sfname, start, end, append, forceit, reset_changed)
 #if defined(UNIX) && !defined(ARCHIE)
 		/* get information about original file (if there is one) */
 	old.st_dev = old.st_ino = 0;
+# ifdef KANJI
+	if (stat(fileconvsto(fname), &old))
+# else
 	if (stat((char *)fname, &old))
+# endif
 		newfile = TRUE;
 	else
 	{
@@ -556,8 +793,13 @@ buf_write(buf, fname, sfname, start, end, append, forceit, reset_changed)
  * If we are not appending, the file exists, and the 'writebackup', 'backup'
  * or 'patchmode' option is set, try to make a backup copy of the file.
  */
+#ifdef KANJI
+	if (!append && perm >= 0 && (p_wb || p_bk || (p_pm != NULL && *p_pm != NUL)) &&
+					(fd = open(fileconvsto(fname), O_RDONLY)) >= 0)
+#else
 	if (!append && perm >= 0 && (p_wb || p_bk || (p_pm != NULL && *p_pm != NUL)) &&
 					(fd = open((char *)fname, O_RDONLY)) >= 0)
+#endif
 	{
 		int				bfd, buflen;
 		char_u			copybuf[BUFSIZE + 1], *wp;
@@ -567,10 +809,10 @@ buf_write(buf, fname, sfname, start, end, append, forceit, reset_changed)
 		new.st_dev = new.st_ino = 0;
 
 		/*
-		 * Unix semantics has it, that we may have a writable file, 
+		 * Unix semantics has it, that we may have a writable file,
 		 * that cannot be recreated with a simple open(..., O_CREAT, ) e.g:
-		 *  - the directory is not writable, 
-		 *  - the file may be a symbolic link, 
+		 *  - the directory is not writable,
+		 *  - the file may be a symbolic link,
 		 *  - the file may belong to another user/group, etc.
 		 *
 		 * For these reasons, the existing writable file must be truncated and
@@ -582,9 +824,14 @@ buf_write(buf, fname, sfname, start, end, append, forceit, reset_changed)
 			{
 				some_error = TRUE;			/* out of memory */
 				goto nobackup;
-			}			
+			}
+#ifdef KANJI
+			if (!stat(fileconvsto(backup), &new) &&
+						new.st_dev == old.st_dev && new.st_ino == old.st_ino)
+#else
 			if (!stat((char *)backup, &new) &&
 						new.st_dev == old.st_dev && new.st_ino == old.st_ino)
+#endif
 			{
 				/*
 				 * may happen when modname gave the same file back.
@@ -601,13 +848,21 @@ buf_write(buf, fname, sfname, start, end, append, forceit, reset_changed)
 				}
 			}
 			else
+#ifdef KANJI
+				remove(fileconvsto(backup));
+#else
 				remove((char *)backup);		/* remove old backup, if present */
+#endif
 		}
+#ifdef KANJI
+		if (backup == NULL || (bfd = open(fileconvsto(backup), O_WRONLY | O_CREAT, 0666)) < 0)
+#else
 		if (backup == NULL || (bfd = open((char *)backup, O_WRONLY | O_CREAT, 0666)) < 0)
+#endif
 		{
-			/* 
+			/*
 			 * 'backupdir' starts with '>' or  no write/create permission
-			 * in current dirr: try again in p_bdir directory. 
+			 * in current dirr: try again in p_bdir directory.
 			 */
 			free(backup);
 			wp = gettail(fname);
@@ -617,16 +872,26 @@ buf_write(buf, fname, sfname, start, end, append, forceit, reset_changed)
 				some_error = TRUE;			/* out of memory */
 				goto nobackup;
 			}
+#ifdef KANJI
+			if (!stat(fileconvsto(backup), &new) &&
+						new.st_dev == old.st_dev && new.st_ino == old.st_ino)
+#else
 			if (!stat((char *)backup, &new) &&
 						new.st_dev == old.st_dev && new.st_ino == old.st_ino)
+#endif
 			{
 				errmsg = (char_u *)"Invalid backup file (use ! to override)";
 				free(backup);
 				backup = NULL;	/* there is no backup file to delete */
 				goto nobackup;
 			}
+#ifdef KANJI
+			remove(fileconvsto(backup));
+			if ((bfd = open((char *)fileconvsto(backup), O_WRONLY | O_CREAT, 0666)) < 0)
+#else
 			remove((char *)backup);
 			if ((bfd = open((char *)backup, O_WRONLY | O_CREAT, 0666)) < 0)
+#endif
 			{
 				free(backup);
 				backup = NULL;	/* there is no backup file to delete */
@@ -635,7 +900,11 @@ buf_write(buf, fname, sfname, start, end, append, forceit, reset_changed)
 			}
 		}
 		/* set file protection same as original file, but strip s-bit */
+#ifdef KANJI
+		(void)setperm(fileconvsto(backup), perm & 0777);
+#else
 		(void)setperm(backup, perm & 0777);
+#endif
 
 		/* copy the file. */
 		while ((buflen = read(fd, (char *)copybuf, BUFSIZE)) > 0)
@@ -663,8 +932,12 @@ nobackup:
 		/* if forceit and the file was read-only: make it writable */
 	if (forceit && (old.st_uid == getuid()) && perm >= 0 && !(perm & 0200))
  	{
-		perm |= 0200;	
+		perm |= 0200;
+#ifdef KANJI
+		(void)setperm(fileconvsto(fname), perm);
+#else
 		(void)setperm(fname, perm);
+#endif
 		made_writable = TRUE;
 			/* if we are writing to the current file, readonly makes no sense */
 		if (fname == buf->b_filename || fname == buf->b_sfilename)
@@ -675,14 +948,22 @@ nobackup:
 /*
  * If we are not appending, the file exists, and the 'writebackup' or
  * 'backup' option is set, make a backup.
- * Do not make any backup, if "writebackup" and "backup" are 
+ * Do not make any backup, if "writebackup" and "backup" are
  * both switched off. This helps when editing large files on
  * almost-full disks. (jw)
  */
+# ifdef KANJI
+	perm = getperm(fileconvsto(fname));
+# else
 	perm = getperm(fname);
+# endif
 	if (perm < 0)
 		newfile = TRUE;
+# ifdef KANJI
+	else if (isdir(fileconvsto(fname)) == TRUE)
+# else
 	else if (isdir(fname) == TRUE)
+# endif
 	{
 		errmsg = (char_u *)"is a directory";
 		goto fail;
@@ -692,6 +973,47 @@ nobackup:
 		/*
 		 * Form the backup file name - change path/fo.o.h to path/fo.o.h.bak
 		 */
+# if defined(NT) && !defined(notdef)
+		if (p_bdir != NULL && *p_bdir != NUL)
+		{
+			char_u			copybuf[BUFSIZE + 1], *wp;
+
+			if (*p_bdir != '>')
+			{
+				backup = buf_modname(buf, fname, (char_u *)".bak");
+				if (backup == NULL)
+					goto nexttry;
+#  ifdef KANJI
+				remove(fileconvsto(backup));
+				len = rename(fileconvsto(fname), fileconvsto(backup));
+#  else
+				remove((char *)backup);
+				len = rename((char *)fname, (char *)backup);
+#  endif
+				if (len != 0)
+				{
+					free(backup);
+					goto nexttry;
+				}
+#  ifdef KANJI
+				rename(fileconvsto(backup), fileconvsto(fname));
+#  else
+				rename((char *)backup, (char *)fname);
+#  endif
+			}
+			else
+			{
+nexttry:
+				wp = gettail(fname);
+				if (ispathsep(p_bdir[strlen(p_bdir) - 1]))
+					sprintf((char *)copybuf, "%s%s", *p_bdir == '>' ? p_bdir + 1 : p_bdir, wp);
+				else
+					sprintf((char *)copybuf, "%s\\%s", *p_bdir == '>' ? p_bdir + 1 : p_bdir, wp);
+				backup = buf_modname(buf, copybuf, (char_u *)".bak");
+			}
+		}
+		else
+# endif
 		backup = buf_modname(buf, fname, (char_u *)".bak");
 		if (backup == NULL)
 		{
@@ -720,12 +1042,20 @@ nobackup:
 			 */
 			flock = Lock((UBYTE *)fname, (long)ACCESS_READ);
 #endif
+#ifdef KANJI
+			remove(fileconvsto(backup));
+#else
 			remove((char *)backup);
+#endif
 #ifdef AMIGA
 			if (flock)
 				UnLock(flock);
 #endif
+#ifdef KANJI
+			len = rename(fileconvsto(fname), fileconvsto(backup));
+#else
 			len = rename((char *)fname, (char *)backup);
+#endif
 			if (len != 0)
 			{
 				if (forceit)
@@ -753,16 +1083,22 @@ nobackup:
 	if (reset_changed && !newfile && !otherfile(ffname) && !(exiting && backup != NULL))
 		ml_preserve(buf, FALSE);
 
-	/* 
+	/*
 	 * We may try to open the file twice: If we can't write to the
 	 * file and forceit is TRUE we delete the existing file and try to create
 	 * a new one. If this still fails we may have lost the original file!
 	 * (this may happen when the user reached his quotum for number of files).
 	 * Appending will fail if the file does not exist and forceit is FALSE.
 	 */
+#ifdef KANJI
+	while ((fd = open(fileconvsto(fname), O_WRONLY | (append ?
+					(forceit ? (O_APPEND | O_CREAT) : O_APPEND) :
+					(O_CREAT | O_TRUNC)), 0666)) < 0)
+#else
 	while ((fd = open((char *)fname, O_WRONLY | (append ?
 					(forceit ? (O_APPEND | O_CREAT) : O_APPEND) :
 					(O_CREAT | O_TRUNC)), 0666)) < 0)
+#endif
  	{
 		/*
 		 * A forced write will try to create a new file if the old one is
@@ -777,13 +1113,17 @@ nobackup:
 #ifdef UNIX
 				/* we write to the file, thus it should be marked
 													writable after all */
-				perm |= 0200;		
+				perm |= 0200;
 				made_writable = TRUE;
 				if (old.st_uid != getuid() || old.st_gid != getgid())
 					perm &= 0777;
 #endif /* UNIX */
 				if (!append)		/* don't remove when appending */
+#ifdef KANJI
+					remove(fileconvsto(fname));
+#else
 					remove((char *)fname);
+#endif
 				continue;
 			}
 		}
@@ -802,12 +1142,23 @@ nobackup:
 			 * This won't work if the backup is in another file system!
 			 * In that case we leave the copy around.
 			 */
+# ifdef KANJI
+			if (stat(fileconvsto(fname), &st) < 0)
+				rename(fileconvsto(backup), fileconvsto(fname));
+			if (stat(fileconvsto(fname), &st) >= 0)
+				remove(fileconvsto(backup));
+# else
 			if (stat((char *)fname, &st) < 0)	/* file does not exist */
 				rename((char *)backup, (char *)fname);	/* put the copy in its place */
 			if (stat((char *)fname, &st) >= 0)	/* original file does exist */
 				remove((char *)backup);	/* throw away the copy */
+# endif
 #else
+# ifdef KANJI
+ 			rename(fileconvsto(backup), fileconvsto(fname));
+# else
  			rename((char *)backup, (char *)fname);	/* try to put the original file back */
+# endif
 #endif
 		}
  		goto fail;
@@ -819,15 +1170,129 @@ nobackup:
 	len = 0;
 	s = buffer;
 	nchars = 0;
+#if defined(NT) && defined(USE_EXFILE) && defined(USE_MATOME)
+	if (strchr(buf->b_p_ec, 'b') || strchr(buf->b_p_ec, 'u'))
+	{
+		do_encode	= TRUE;
+		encode_name = gettail(fname);
+		encode_buf	= buf;
+	}
+#endif
+#if defined(KANJI) && defined(UCODE)
+	if (toupper(*buf->b_p_jc) == JP_WIDE && !append && !curbuf->b_p_bin)	/* UNICODE */
+	{
+		char_u		w[2];
+		if (curbuf->b_p_ubig)
+		{
+			w[0] = 0xfe;
+			w[1] = 0xff;
+		}
+		else
+		{
+			w[0] = 0xff;
+			w[1] = 0xfe;
+		}
+		if (write_buf(fd, (char *)w, (size_t)2) == FAIL)
+			end = 0;
+		nchars = 2;
+	}
+#endif
 	for (lnum = start; lnum <= end; ++lnum)
 	{
+#ifdef KANJI
+		char_u	*tmpptr;
+# ifdef UCODE
+		char_u	wrk[2];
+# endif
+#endif
 		/*
 		 * The next while loop is done once for each character written.
 		 * Keep it fast!
 		 */
 		ptr = ml_get_buf(buf, lnum, FALSE) - 1;
-		while ((c = *++ptr) != NUL)
+#ifdef KANJI
+# ifdef USE_OPT
+		if (!(p_opt & OPT_ORG_BINMODE) && curbuf->b_p_bin)
 		{
+			int			wlen;
+
+			tmpptr = binaryconvsto((char_u)toupper(*buf->b_p_jc), ptr + 1, &wlen, curbuf->b_p_ubig);
+			if (wlen && tmpptr)
+			{
+				if (write_buf(fd, tmpptr, wlen) == FAIL)
+				{
+					end = 0;				/* write error: break loop */
+					break;
+				}
+				nchars += wlen;
+			}
+			if (tmpptr)
+				free(tmpptr);
+			continue;
+		}
+		if (buf->b_p_opt & FOPT_EXTEND)
+		{
+			char_u	   *org;
+
+			org = alloc(strlen(ptr + 1) + 1);
+			strcpy(org, ptr + 1);
+			org = opt_delet(org, 'W',
+						buf->b_p_opt & FOPT_EXPAND_TAB,
+						curbuf->b_p_opt & FOPT_ENCODE_TAB,
+						buf->b_p_opt & FOPT_DEL_SPC,
+						buf->b_p_opt & FOPT_REP_SPC,
+						buf->b_p_opt & FOPT_GAIJI,
+						(int)buf->b_p_ts);
+			tmpptr = kanjiconvsto(org, (char_u)toupper(*buf->b_p_jc), buf->b_p_ubig);
+			free(org);
+		}
+		else
+# endif
+		tmpptr = kanjiconvsto(ptr + 1, (char_u)toupper(*buf->b_p_jc), buf->b_p_ubig);
+		ptr = tmpptr - 1;
+#endif
+#if defined(KANJI) && defined(UCODE)
+		while ((toupper(*buf->b_p_jc) == JP_WIDE)
+											? TRUE : ((c = *++ptr) != NUL))
+#else
+		while ((c = *++ptr) != NUL)
+#endif
+		{
+#if defined(KANJI) && defined(UCODE)
+			if (toupper(*buf->b_p_jc) == JP_WIDE)	/* UNICODE */
+			{
+				c = *++ptr;
+				wrk[0] = c;
+				wrk[1] = ptr[1];
+				if (wide2multi(wrk, 2, curbuf->b_p_ubig, FALSE) == 1)
+				{
+					if (wrk[0] == NL)
+					{
+						s[0] = NUL;		/* replace newlines with NULs */
+						s[1] = NUL;		/* replace newlines with NULs */
+					}
+					else if (wrk[0] == NUL)
+					{
+						ptr++;
+						break;
+					}
+					else
+					{
+						s[0] = c;
+						s[1] = ptr[1];
+					}
+				}
+				else
+				{
+					s[0] = c;
+					s[1] = ptr[1];
+				}
+				++s;
+				++len;
+				++ptr;
+			}
+			else
+#endif
 			if (c == NL)
 				*s = NUL;		/* replace newlines with NULs */
 			else
@@ -845,10 +1310,30 @@ nobackup:
 			len = 0;
 		}
 			/* write failed or last line has no EOL: stop here */
+#ifdef notdef
+		if (end == 0 || (lnum == buf->b_ml.ml_line_count && (buf->b_p_bin || !buf->b_p_eol)))
+#else
 		if (end == 0 || (buf->b_p_bin && lnum == buf->b_ml.ml_line_count && !buf->b_p_eol))
+#endif
 			break;
+#ifdef USE_OPT
+		if ((buf->b_p_opt & FOPT_MAC_FILE) || (buf->b_p_tx))
+#else
 		if (buf->b_p_tx)		/* write CR-NL */
+#endif
 		{
+#if defined(KANJI) && defined(UCODE)
+			if (toupper(*buf->b_p_jc) == JP_WIDE)	/* UNICODE */
+			{
+				wrk[0] = CR;
+				multi2wide(&wrk[0], &wrk[1], 1, buf->b_p_ubig);
+				s[0] = wrk[0];
+				s[1] = wrk[1];
+				++s;
+				++len;
+			}
+			else
+#endif
 			*s = CR;
 			++s;
 			if (++len == bufsize)
@@ -863,6 +1348,29 @@ nobackup:
 				len = 0;
 			}
 		}
+#ifdef KANJI
+		free(tmpptr);
+#endif
+#ifdef USE_OPT
+		if (buf->b_p_opt & FOPT_MAC_FILE)
+		{
+			--s;
+			--len;
+		}
+		else
+#endif
+#if defined(KANJI) && defined(UCODE)
+		if (toupper(*buf->b_p_jc) == JP_WIDE)	/* UNICODE */
+		{
+			wrk[0] = NL;
+			multi2wide(&wrk[0], &wrk[1], 1, buf->b_p_ubig);
+			s[0] = wrk[0];
+			s[1] = wrk[1];
+			++s;
+			++len;
+		}
+		else
+#endif
 		*s = NL;
 		++s;
 		if (++len == bufsize && end)
@@ -884,6 +1392,12 @@ nobackup:
 		nchars += len;
 	}
 
+#if defined(NT) && defined(USE_EXFILE) && defined(USE_MATOME)
+	if (write_buf(fd, NULL, 0) == FAIL)
+		end = 0;				/* write error */
+	do_encode = FALSE;
+#endif
+
 	if (close(fd) != 0)
 	{
 		errmsg = (char_u *)"Close failed";
@@ -894,7 +1408,11 @@ nobackup:
 		perm &= ~0200;			/* reset 'w' bit for security reasons */
 #endif
 	if (perm >= 0)
+#ifdef KANJI
+		(void)setperm(fileconvsto(fname), perm);	/* set permissions of new file same as old file */
+#else
 		(void)setperm(fname, perm);	/* set permissions of new file same as old file */
+#endif
 
 	if (end == 0)
 	{
@@ -905,6 +1423,9 @@ nobackup:
 #ifdef MSDOS		/* the screen may be messed up by the "insert disk
 							in drive b: and hit return" message */
 	if (!exiting)
+# ifdef NT
+		if (!GuiWin)
+# endif
 		screenclear();
 #endif
 
@@ -912,10 +1433,18 @@ nobackup:
 	--no_wait_return;		/* may wait for return now */
 
 		/* careful: home_replace calls vimgetenv(), which also uses IObuff! */
+#if defined(NT) && !defined(notdef)
+	if (!did_cd)
+		fname = sfname;
+#endif
 	home_replace(fname, IObuff + 1, IOSIZE - 1);
 	IObuff[0] = '"';
 	sprintf((char *)IObuff + STRLEN(IObuff),
+#ifdef KANJI
+					"\"%s%s %ld line%s, %ld character%s [%c]",
+#else
 					"\"%s%s %ld line%s, %ld character%s",
+#endif
 			newfile ? " [New File]" : " ",
 #ifdef MSDOS
 			buf->b_p_tx ? "" : "[notextmode]",
@@ -923,7 +1452,11 @@ nobackup:
 			buf->b_p_tx ? "[textmode]" : "",
 #endif
 			(long)lnum, plural((long)lnum),
+#ifdef KANJI
+			nchars, plural(nchars), toupper(*buf->b_p_jc));
+#else
 			nchars, plural(nchars));
+#endif
 	msg(IObuff);
 
 	if (reset_changed && whole)			/* when written everything */
@@ -960,9 +1493,17 @@ nobackup:
 			 */
 		    if (org == NULL)
 				EMSG("patchmode: can't save original file");
+#ifdef KANJI
+			else if (stat(fileconvsto(org), &st) < 0)
+#else
 			else if (stat(org, &st) < 0)
+#endif
 			{
+#ifdef KANJI
+			    rename(fileconvsto(backup), fileconvsto(org));
+#else
 			    rename((char *)backup, org);
+#endif
 				free(backup);			/* don't delete the file */
 				backup = NULL;
 			}
@@ -975,14 +1516,22 @@ nobackup:
 		{
 		    int fd;
 
+#ifdef KANJI
+			if (org == NULL || (fd = open(fileconvsto(org), O_CREAT, 0666)) < 0)
+#else
 			if (org == NULL || (fd = open(org, O_CREAT, 0666)) < 0)
+#endif
 			  EMSG("patchmode: can't touch empty original file");
 		    else
 			  close(fd);
 		}
 	    if (org != NULL)
 		{
+#ifdef KANJI
+		    setperm(fileconvsto(org), getperm(fileconvsto(fname)) & 0777);
+#else
 		    setperm((char_u *)org, getperm(fname) & 0777);
+#endif
 			free(org);
 		}
 	}
@@ -990,9 +1539,13 @@ nobackup:
 	/*
 	 * Remove the backup unless 'backup' option is set
 	 */
+#ifdef KANJI
+	if (!p_bk && backup != NULL && remove(fileconvsto(backup)) != 0)
+#else
 	if (!p_bk && backup != NULL && remove((char *)backup) != 0)
+#endif
 		EMSG("Can't delete backup file");
-	
+
 	goto nofail;
 
 fail:
@@ -1027,14 +1580,44 @@ write_buf(fd, buf, len)
 {
 	int		wlen;
 
+#if defined(NT) && defined(USE_EXFILE) && defined(USE_MATOME)
+	int		last = FALSE;
+	char_u	*tmp;
+
+	breakcheck();
+	if (do_encode)
+	{
+		if (buf == NULL && len == 0)
+			last = TRUE;
+		if ((tmp = encode(*encode_buf->b_p_ec, encode_name,
+				(encode_buf->b_p_opt & FOPT_MAC_FILE) ? 2 : (encode_buf->b_p_tx ? 1 : 0),
+				buf, &len, last)) == NULL)
+			return(FAIL);
+		if (!last)
+			return(OK);
+		buf = tmp;
+	}
+#endif
 	while (len)
 	{
 		wlen = write(fd, (char *)buf, (size_t)len);
 		if (wlen <= 0)				/* error! */
+#if defined(NT) && defined(USE_EXFILE) && defined(USE_MATOME)
+		{
+			if (do_encode)
+				free(tmp);
 			return FAIL;
+		}
+#else
+			return FAIL;
+#endif
 		len -= wlen;
 		buf += wlen;
 	}
+#if defined(NT) && defined(USE_EXFILE) && defined(USE_MATOME)
+	if (do_encode)
+		free(tmp);
+#endif
 	return OK;
 }
 
@@ -1051,15 +1634,25 @@ do_mlines()
 	linenr_t		lnum;
 	int 			nmlines;
 
+#ifdef USE_OPT
+	if (!(p_opt & OPT_ORG_BINMODE) && curbuf->b_p_bin)
+		return;
+#endif
 	if (!curbuf->b_p_ml || (nmlines = (int)p_mls) == 0)
 		return;
 
+#ifdef NT
+	NoResize = TRUE;
+#endif
 	for (lnum = 1; lnum <= curbuf->b_ml.ml_line_count && lnum <= nmlines; ++lnum)
 		chk_mline(lnum);
 
 	for (lnum = curbuf->b_ml.ml_line_count; lnum > 0 && lnum > nmlines &&
 							lnum > curbuf->b_ml.ml_line_count - nmlines; --lnum)
 		chk_mline(lnum);
+#ifdef NT
+	NoResize = FALSE;
+#endif
 }
 
 /*
@@ -1140,7 +1733,11 @@ buf_modname(buf, fname, ext)
 	register char_u   *s;
 	register char_u   *ptr;
 	register int	fnamelen, extlen;
+#ifdef notdef
 	char_u			currentdir[512];
+#else
+	char_u			currentdir[MAXPATHL + 2];
+#endif
 
 	extlen = STRLEN(ext);
 
@@ -1150,7 +1747,18 @@ buf_modname(buf, fname, ext)
 	 */
 	if (fname == NULL || *fname == NUL)
 	{
+#ifdef notdef
 		if (vim_dirname(currentdir, 510) == FAIL || (fnamelen = STRLEN(currentdir)) == 0)
+#else
+# ifdef KANJI
+		if (vim_dirname(currentdir, MAXPATHL) == FAIL)
+			return(NULL);
+		STRCPY(currentdir, fileconvsfrom(currentdir));
+		if ((fnamelen = STRLEN(currentdir)) == 0)
+# else
+		if (vim_dirname(currentdir, MAXPATHL) == FAIL || (fnamelen = STRLEN(currentdir)) == 0)
+# endif
+#endif
 			return NULL;
 		if (!ispathsep(currentdir[fnamelen - 1]))
 		{
@@ -1175,11 +1783,14 @@ buf_modname(buf, fname, ext)
 		 */
 		for (ptr = retval + fnamelen; ptr >= retval; ptr--)
 		{
-#ifndef MSDOS
+#if !defined(MSDOS) || defined(NT)
 			if (buf->b_p_sn || buf->b_shortname)
 #endif
 				if (*ptr == '.')	/* replace '.' by '_' */
 					*ptr = '_';
+#if defined(KANJI) && defined(MSDOS)
+			if (ISkanjiPointer(retval, ptr) != 2)
+#endif
 			if (ispathsep(*ptr))
 				break;
 		}
@@ -1188,7 +1799,7 @@ buf_modname(buf, fname, ext)
 		/* the filename has at most BASENAMELEN characters. */
 		if (STRLEN(ptr) > (unsigned)BASENAMELEN)
 			ptr[BASENAMELEN] = '\0';
-#ifndef MSDOS
+#if !defined(MSDOS) || defined(NT)
 		if ((buf->b_p_sn || buf->b_shortname) && STRLEN(ptr) > (unsigned)8)
 			ptr[8] = '\0';
 #endif
@@ -1199,11 +1810,15 @@ buf_modname(buf, fname, ext)
 		 * ext must start with '.' and cannot exceed 3 more characters.
 		 */
 		STRCPY(s, ext);
-#ifdef MSDOS
+#if defined(MSDOS) && !defined(NT)
 		if (fname == NULL || *fname == NUL)		/* can't have just the extension */
 			*s = '_';
 #endif
+#ifndef MSDOS
 		if (fname != NULL && STRCMP(fname, retval) == 0)
+#else
+		if (fname != NULL && fnamecmp(fname, retval) == 0)
+#endif
 		{
 			/* after modification still the same name? */
 			/* we search for a character that can be replaced by '_' */
@@ -1261,3 +1876,220 @@ vim_fgets(buf, size, fp, lnum)
 	return (eof == NULL);
 }
 #endif /* WEBB_COMPLETE */
+
+#ifdef USE_OPT
+	static char_u *
+opt_delet(buf, readwrite, expand, entab, delete, replace, gaiji, ts)
+	char_u *buf;
+	int		readwrite;
+	int		expand;
+	int		entab;
+	int		delete;
+	int		replace;
+	int		gaiji;
+	int		ts;
+{
+	char_u		*	cp	= buf;
+	int				add	= 0;
+	colnr_t			n;
+	colnr_t			col;
+	colnr_t			space = (-1);
+	colnr_t			vcol;
+	int				top = FALSE;
+
+	if (expand && ts < 1)
+	{
+		expand = FALSE;
+		entab  = FALSE;
+	}
+# ifdef KANJI
+	if (replace || gaiji)
+	{
+		col = 0;
+		while (buf[col])
+		{
+			if (replace && ISkanji(buf[col]) && buf[col + 1]
+										&& isjpspace(buf[col], buf[col + 1]))
+			{
+				buf[col] = buf[col+1] = ' ';
+				col += 2;
+			}
+			else if (gaiji && readwrite == 'R' && buf[col] == '#')
+			{
+				if (strlen(&buf[col]) >= 6 && buf[col + 5] == '#')
+				{
+					int			 cc = 0;
+					int			 i;
+
+					for (i = 0; i < 4; ++i)
+					{
+						if (!isxdigit(buf[col + 1 + i]))
+						{
+							cc = -1;
+							break;
+						}
+						if ('0' <= buf[col + 1 + i] && buf[col + 1 + i] <= '9')
+							cc = cc * 16 + buf[col + 1 + i] - '0';
+						else
+							cc = cc * 16 + toupper(buf[col + 1 + i]) - 'A' + 10;
+					}
+					if (cc == -1)
+						col++;
+					else
+					{
+						buf[col + 0]  = (cc & 0xff00) >> 8;
+						buf[col + 1]  =  cc & 0x00ff;
+						memmove(&buf[col + 2], &buf[col + 6],
+												strlen(&buf[col + 6]) + 1);
+						col += 2;
+					}
+				}
+				else
+					col++;
+			}
+			else if (gaiji && readwrite == 'W' && buf[col + 1]
+									&& 0xf0 <= buf[col] && buf[col] <= 0xf9)
+			{
+				char_u		*	p;
+				int			 	i;
+				int				c;
+
+				if ((p = alloc(strlen(buf) + 4 + 1)) == NULL)
+					gaiji = NUL;
+				else
+				{
+					memcpy(p, buf, col);
+					p[col + 0] = '#';
+					for (i = 1; i < 5; i++)
+					{
+						if (i & 1)
+							c = (buf[col + (i - 1) / 2] & 0xf0) >> 4;
+						else
+							c = (buf[col + (i - 1) / 2] & 0x0f);
+						p[col + i] = c > 9 ? 'A' + c - 10 : '0' + c;
+					}
+					p[col + 5] = '#';
+					memcpy(&p[col + 6], &buf[col + 2],
+											strlen(&buf[col + 2]) + 1);
+					col += 6;
+					free(buf);
+					cp = buf = p;
+				}
+			}
+			else if (ISkanji(buf[col]) && buf[col + 1])
+				col += 2;
+			else
+				col++;
+		}
+	}
+# endif
+	if (expand)
+	{
+		col = 0;
+		while (buf[col])
+		{
+# ifdef KANJI
+			if (ISkanji(buf[col]) && buf[col + 1])
+				col += 2;
+			else
+# endif
+			{
+				if (buf[col] == '\t')
+					add += ts;
+				col++;
+			}
+		}
+		if ((cp = alloc(strlen(buf) + add + 1)) == NULL)
+		{
+			cp = buf;
+			expand = FALSE;
+		}
+	}
+	vcol = n = col = 0;
+	while (buf[col])
+	{
+		if (entab && !top)
+		{
+			int			n_tabs;
+			int			n_spaces;
+			int			i;
+
+			if (buf[col] == ' ')
+			{
+				col++;
+				vcol += 1;
+				continue;
+			}
+			if (buf[col] == '\t')
+			{
+				col++;
+				vcol += ts - (vcol % ts);
+				continue;
+			}
+# ifdef KANJI
+			if (ISkanji(buf[col]) && buf[col + 1] && isjpspace(buf[col], buf[col + 1]))
+			{
+				vcol += 2;
+				col += 2;
+				continue;
+			}
+# endif
+			top = TRUE;
+			n_tabs = vcol / ts;
+			for (i = 0; i < n_tabs; i++)
+				cp[n++] = '\t';
+			n_spaces = vcol % ts;
+			for (i = 0; i < n_spaces; i++)
+				cp[n++] = ' ';
+		}
+# ifdef KANJI
+		if (ISkanji(buf[col]) && buf[col + 1])
+		{
+			if (isjpspace(buf[col], buf[col + 1]))
+				space = (space != (-1)) ? space : n;
+			else
+				space = (-1);
+			cp[n++] = buf[col++];
+			cp[n++] = buf[col++];
+			vcol += 2;
+		}
+		else
+# endif
+		if (buf[col] == '\t')
+		{
+			int			n_spaces;
+			int			i;
+
+			space = (space != (-1)) ? space : n;
+			n_spaces = ts - (vcol % ts);
+			vcol += n_spaces;
+			if (expand)
+			{
+				for (i = 0; i < n_spaces; i++)
+					cp[n++] = ' ';
+				col++;
+			}
+			else
+				cp[n++] = buf[col++];
+		}
+		else if (buf[col] == ' ')
+		{
+			space = (space != (-1)) ? space : n;
+			cp[n++] = buf[col++];
+			vcol += 1;
+		}
+		else
+		{
+			space = (-1);
+			cp[n++] = buf[col++];
+			vcol += 1;
+		}
+	}
+	if (delete && space != (-1) && space < n)
+		n = space;
+	cp[n] = NUL;
+	if (expand)
+		free(buf);
+	return(cp);
+}
+#endif

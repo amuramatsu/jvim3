@@ -15,6 +15,12 @@
 #ifdef SPAWNO
 # include <spawno.h>			/* special MSDOS swapping library */
 #endif
+#ifdef KANJI
+# include "kanji.h"
+#endif
+#if !defined(USE_EXFILE) && defined(NT)
+# include <windows.h>
+#endif
 
 static void usage __PARMS((int));
 
@@ -31,6 +37,66 @@ usage(n)
 								(char_u *)"Argument missing\n",		/* 2 */
 								};
 
+#ifdef NT
+	if (!SubSysCon)
+	{
+		static char_u			msg[8192];
+		int						pos = 0;
+
+		pos += wsprintf(&msg[pos],
+# ifdef KANJI
+				"    %s\r\nPorted to W32-GUI and Japanized Ver. %s\n\n",
+					longVersion,
+					longJpVersion
+# else
+					"%s",
+					longVersion
+# endif
+				);
+		if (n <= 2)
+			pos += wsprintf(&msg[pos], (char *)errors[n]);
+		pos += wsprintf(&msg[pos], "usage:");
+		for (i = 0; ; ++i)
+		{
+			pos += wsprintf(&msg[pos], " vim [options] ");
+			pos += wsprintf(&msg[pos], (char *)use[i]);
+			if (i == (sizeof(use) / sizeof(char_u *)) - 1)
+				break;
+			pos += wsprintf(&msg[pos], "     or:");
+		}
+		pos += wsprintf(&msg[pos], "\noptions:\t-v\t\treadonly mode (view)\n");
+		pos += wsprintf(&msg[pos], "\t-n\t\tno swap file, use memory only\n");
+		pos += wsprintf(&msg[pos], "\t-b\t\tbinary mode\n");
+		pos += wsprintf(&msg[pos], "\t-r\t\trecovery mode\n");
+		pos += wsprintf(&msg[pos], "\t-T terminal\tset terminal type\n");
+		pos += wsprintf(&msg[pos], "\t-o[N]\t\topen N windows (def: one for each file)\n");
+		pos += wsprintf(&msg[pos], "\t+\t\tstart at end of file\n");
+		pos += wsprintf(&msg[pos], "\t+lnum\t\tstart at line lnum\n");
+		pos += wsprintf(&msg[pos], "\t-c command\texecute command first\n");
+		pos += wsprintf(&msg[pos], "\t-s scriptin\t\tread commands from script file\n");
+		pos += wsprintf(&msg[pos], "\t-w scriptout\twrite commands in script file\n");
+# if defined(USE_EXFILE) && defined(USE_MATOME)
+		pos += wsprintf(&msg[pos], "\t-X\t\tno use Extend File System\n");
+# endif
+# ifdef KANJI
+		pos += wsprintf(&msg[pos], "\t-k FileCode\tfile jcode set\n");
+		pos += wsprintf(&msg[pos], "\t-K KanjiCode\tjmask code set\n");
+# endif
+		pos += wsprintf(&msg[pos], "\t-B script\t\tbenchmark commands in script file\n");
+		pos += wsprintf(&msg[pos], "\t-I section\t\tsection name in .ini file\n");
+		MessageBox(NULL, msg,
+# ifdef KANJI
+					JpVersion,
+# else
+					Version,
+# endif
+				MB_OK);
+		mch_windexit(1);
+	}
+#endif
+#ifndef notdef
+	if (n <= 2)
+#endif
 	fprintf(stderr, (char *)errors[n]);
 	fprintf(stderr, "usage:");
 	for (i = 0; ; ++i)
@@ -56,6 +122,17 @@ usage(n)
 	fprintf(stderr, "\t\t-c command\texecute command first\n");
 	fprintf(stderr, "\t\t-s scriptin\tread commands from script file\n");
 	fprintf(stderr, "\t\t-w scriptout\twrite commands in script file\n");
+#if defined(NT) && defined(USE_EXFILE) && defined(USE_MATOME)
+	fprintf(stderr, "\t\t-X\t\tno use Extend File System\n");
+#endif
+#ifdef KANJI
+	fprintf(stderr, "\t\t-k FileCode\tfile jcode set\n");
+	fprintf(stderr, "\t\t-K KanjiCode\tjmask code set\n");
+#endif
+#ifdef NT
+	fprintf(stderr, "\t\t-B script\tbenchmark commands in script file\n");
+	fprintf(stderr, "\t\t-I section\tsection name in .ini file\n");
+#endif
 	mch_windexit(1);
 }
 
@@ -63,7 +140,7 @@ usage(n)
 # include <locale.h>
 #endif
 
-	void
+	int
 main(argc, argv)
 	int				argc;
 	char		  **argv;
@@ -78,6 +155,12 @@ main(argc, argv)
 	int				i;
 	int				bin_mode = FALSE;	/* -b option used */
 	int				win_count = 1;		/* number of windows to use */
+#ifdef KANJI
+	int				kopt = FALSE;
+	int				fopt = FALSE;
+	char_u			jcode[2];
+	char_u			jmask[4];
+#endif
 
 #ifdef USE_LOCALE
 	setlocale(LC_ALL, "");		/* for ctype() and the like */
@@ -124,7 +207,7 @@ main(argc, argv)
 	 *		'-T terminal'	terminal name
 	 */
 	while (argc > 1 && ((c = argv[0][0]) == '+' || (c == '-' &&
-			strchr("vnbrxocswTd", c = argv[0][1]) != NULL && c != NUL)))
+			strchr("vnbrxocswTdRKkhBIX", c = argv[0][1]) != NULL && c != NUL)))
 	{
 		--argc;
 		switch (c)
@@ -138,11 +221,29 @@ main(argc, argv)
 			break;
 
 		case 'v':
+#ifndef notdef
+		case 'R':
+#endif
 			readonlymode = TRUE;
 			curbuf->b_p_ro = TRUE;
 			/*FALLTHROUGH*/
 
 		case 'n':
+#ifdef NT
+			c = argv[0][2];
+			if (c == 'w' && SubSysCon)
+				GuiWin = 0;
+			else if (c == 'o' && GuiWin)
+				GuiWin = '1';
+			else if (c != NUL && isdigit(c))
+			{
+				GuiConfig = atoi(&(argv[0][2]));
+				if (GuiConfig > 3)
+					GuiConfig = 0;
+			}
+			else
+#endif
+
 			p_uc = 0;
 			break;
 
@@ -153,7 +254,7 @@ main(argc, argv)
 		case 'r':
 			recoverymode = 1;
 			break;
-		
+
 		case 'x':
 			break;	/* This is ignored as it is handled in check_win() */
 
@@ -166,6 +267,17 @@ main(argc, argv)
 			}
 			win_count = atoi(&(argv[0][2]));		/* 0 means: number of files */
 			break;
+
+#ifdef KANJI
+		case 'h':
+			usage(9);
+			break;
+#endif
+#if defined(NT) && defined(USE_EXFILE) && defined(USE_MATOME)
+		case 'X':
+			NoEFS = !NoEFS;
+			break;
+#endif
 
 		default:	/* options with argument */
 			++argv;
@@ -186,7 +298,7 @@ main(argc, argv)
 					mch_windexit(2);
 				}
 				break;
-			
+
 			case 'w':
 				if ((scriptout = fopen(argv[0], APPENDBIN)) == NULL)
 				{
@@ -202,7 +314,51 @@ main(argc, argv)
 			case 'T':
 				term = (char_u *)*argv;
 				break;
-			
+
+#ifdef KANJI
+			case 'k':
+				if (STRLEN(argv[0]) == 1 && STRCHR(JP_FSTR, argv[0][0]))
+				{
+					fopt = TRUE;
+					curbuf->b_p_jc = strsave(argv[0]);
+					STRCPY(jcode, argv[0]);
+				}
+				break;
+			case 'K':
+				if (STRLEN(argv[0]) == 3)
+				{
+					char_u	*	cp;
+
+					p_jp = argv[0];
+					for (cp = argv[0]; *cp; cp++)
+					{
+						if ('a' <= *cp && *cp <= 'z')
+							*cp -= 'a' - 'A';
+						if (!STRCHR(JP_STR, *cp))
+							p_jp = NULL;
+					}
+				}
+				if (p_jp != NULL)
+				{
+					kopt = TRUE;
+					STRCPY(jmask, p_jp);
+				}
+				break;
+#endif
+
+#ifdef NT
+			case 'B':
+				{
+					BenchTime = GetTickCount();
+					if ((scriptin[0] = fopen(argv[0], READBIN)) == NULL)
+						usage(9);
+				}
+				break;
+			case 'I':
+				STRCPY(GuiIni, argv[0]);
+				break;
+#endif
+
 		/*	case 'd':		This is ignored as it is handled in check_win() */
 			}
 		}
@@ -216,7 +372,11 @@ main(argc, argv)
 		mch_windexit(0);
 
 	/* note that we may use mch_windexit() before mch_windinit()! */
+#ifdef NT
+	mch_windinit(argc, argv, command);
+#else
 	mch_windinit();
+#endif
 	set_init();					/* after mch_windinit because Rows is used */
 	firstwin->w_height = Rows - 1;
 	cmdline_row = Rows - 1;
@@ -291,8 +451,10 @@ main(argc, argv)
 			arg_count = argc - 1;
 			fname = (char_u *)argv[0];
 #endif
+#ifdef notdef
 			if (arg_count > 1)
 				printf("%d files to edit\n", arg_count);
+#endif
 			break;
 		}
 	}
@@ -307,6 +469,7 @@ main(argc, argv)
 									because starting is TRUE) */
 
 #ifdef MSDOS /* default mapping for some often used keys */
+# ifndef KANJI
 	domap(0, "#1 :help\r", NORMAL);			/* F1 is help key */
 	domap(0, "\316R i", NORMAL);			/* INSERT is 'i' */
 	domap(0, "\316S \177", NORMAL);			/* DELETE is 0x7f */
@@ -332,10 +495,15 @@ main(argc, argv)
 	domap(0, "\316\204 \017\061G", INSERT);	/* CTRL-PageUp is '^O1G' */
 	domap(0, "\316Q \017\006", INSERT);		/* PageDown is '^O^F' */
 	domap(0, "\316v \017G", INSERT);		/* CTRL-PageDown is '^OG' */
+# endif /* KANJI */
 #endif
 
 	msg_start();		/* in case a mapping is printed */
 	no_wait_return = TRUE;
+#ifndef notdef
+	if (arg_count > 1)
+		smsg("%d files to edit\n", arg_count);
+#endif
 
 /*
  * get system wide defaults (for unix)
@@ -353,11 +521,31 @@ main(argc, argv)
  * The first that exists is used, the rest is ignored.
  */
 	if ((initstr = vimgetenv((char_u *)"VIMINIT")) != NULL)
+#ifndef notdef
+	{
+	  	if (*initstr == '"')
+		  	initstr++;
+		if (initstr[strlen(initstr) - 1] == '"')
+		  	initstr[strlen(initstr) - 1] = '\0';
 		docmdline(initstr);
+	}
+#else
+		docmdline(initstr);
+#endif
 	else if (dosource((char_u *)SYSVIMRC_FILE) == FAIL)
 	{
 		if ((initstr = vimgetenv((char_u *)"EXINIT")) != NULL)
+#ifndef notdef
+		{
+			if (*initstr == '"')
+				initstr++;
+			if (initstr[strlen(initstr) - 1] == '"')
+				initstr[strlen(initstr) - 1] = '\0';
 			docmdline(initstr);
+		}
+#else
+			docmdline(initstr);
+#endif
 		else
 			(void)dosource((char_u *)SYSEXRC_FILE);
 	}
@@ -434,7 +622,18 @@ main(argc, argv)
 		curbuf->b_p_et = 0;			/* no expand tab */
 	}
 
+#ifdef KANJI
+	if (kopt && STRCMP(jmask, p_jp) != 0)
+		STRCPY(p_jp, jmask);
+	if (fopt && STRCMP(jcode, curbuf->b_p_jc) != 0)
+		STRCPY(curbuf->b_p_jc, jcode);
+#endif
+
+#ifdef KANJI
+	(void)setfname(fileconvsfrom(fname), NULL, TRUE);
+#else
 	(void)setfname(fname, NULL, TRUE);
+#endif
 	maketitle();
 
 	if (win_count == 0)
@@ -457,6 +656,13 @@ main(argc, argv)
 	}
 	screenclear();						/* clear screen */
 
+#ifdef NT
+	if (GuiWin)
+	{
+		++no_wait_return;
+		InitCommand();
+	}
+#endif
 	if (recoverymode)					/* do recover */
 	{
 		if (ml_open() == FAIL)			/* Initialize storage structure */
@@ -482,8 +688,13 @@ main(argc, argv)
 			break;
 		win_enter(curwin->w_next, FALSE);
 											/* edit file i, if there is one */
+#ifdef KANJI
+		(void)doecmd(i < arg_count ? fileconvsfrom(arg_files[i]) : NULL,
+											NULL, NULL, TRUE, (linenr_t)1);
+#else
 		(void)doecmd(i < arg_count ? arg_files[i] : NULL,
 											NULL, NULL, TRUE, (linenr_t)1);
+#endif
 		curwin->w_arg_idx = i;
 	}
 	win_enter(firstwin, FALSE);				/* back to first window */
@@ -493,10 +704,27 @@ main(argc, argv)
 	 * put the rest of the names in the buffer list.
 	 */
 	for (i = win_count; i < arg_count; ++i)
+#ifdef KANJI
+		(void)buflist_add(fileconvsfrom(arg_files[i]));
+#else
 		(void)buflist_add(arg_files[i]);
+#endif
 
 	if (command)
 		docmdline(command);
+#if defined(NT) && defined(USE_HISTORY)
+	else if ((fname = win_history_line(curbuf)) != NULL)
+		docmdline(fname);
+#endif
+#ifdef NT
+	if (GuiWin)
+	{
+		if (GuiWin == 'w')
+			wincmd_active();
+		no_wait_return = 0;
+		need_wait_return = FALSE;
+	}
+#endif
 	/*
 	 * put the :ta command in the stuff buffer here, so that it will not
 	 * be erased by an emsg().
@@ -547,6 +775,7 @@ main(argc, argv)
 		normal();						/* get and execute a command */
 	}
 	/*NOTREACHED*/
+	return 0;
 }
 
 	void

@@ -15,6 +15,9 @@
 #define MESSAGE			/* don't include prototype for smsg() */
 #include "proto.h"
 #include "param.h"
+#ifdef KANJI
+#include "kanji.h"
+#endif
 
 static int msg_check_screen __ARGS((void));
 
@@ -91,7 +94,14 @@ emsg(s)
 			need_wait_return = TRUE;
 		}
 		else
+#ifdef notdef
 			sleep(1);			/* give the user a chance to read the message */
+#else
+		{
+			vim_delay();
+			vim_delay();
+		}
+#endif
 		return TRUE;
 	}
 	return FALSE;
@@ -157,7 +167,11 @@ wait_return(redraw)
 		got_int = FALSE;
 	} while (c == Ctrl('C'));
 	breakcheck();
+# ifdef KANJI
+	if (strchr("\r\n ", c) == NULL && c < 0x100)
+# else
 	if (strchr("\r\n ", c) == NULL)
+# endif
 		stuffcharReadbuff(c);
 #endif
 
@@ -258,6 +272,19 @@ msg_outtrans(str, len)
 		len = STRLEN(str);
 	while (--len >= 0)
 	{
+#ifdef KANJI
+		char_u		buf[3];
+		if (ISkanji(*str) && str[1])
+		{
+			buf[0] = *str++;
+			buf[1] = *str++;
+			buf[2] = NUL;
+			msg_outstr(buf);
+			retval += 2;
+			len--;
+			continue;
+		}
+#endif
 		msg_outstr(transchar(*str));
 		retval += charsize(*str);
 		++str;
@@ -296,6 +323,19 @@ msg_prt_line(s)
 		else
 		{
 			c = s[si++];
+#ifdef KANJI
+			if (ISkanji(c) && s[si])
+			{
+				char_u		buf[3];
+				buf[0] = c;
+				buf[1] = s[si++];
+				buf[2] = NUL;
+				msg_outstr(buf);
+				col += 2;
+				continue;
+			}
+			else
+#endif
 			if (c == TAB && !curwin->w_p_list)
 			{
 				/* tab amount depends on current column */
@@ -352,7 +392,12 @@ msg_outstr(s)
 		 *   (some terminals scroll automatically, some don't. To avoid problems
 		 *   we scroll ourselves)
 		 */
+#ifdef KANJI
+		if ((msg_row >= Rows - 1 && (*s == '\n' || msg_col >= Columns - 1))
+			|| ((msg_row >= Rows - 1 && (msg_col == Columns - 2 && ISkanji(*s)))))
+#else
 		if (msg_row >= Rows - 1 && (*s == '\n' || msg_col >= Columns - 1))
+#endif
 		{
 			screen_del_lines(0, 0, 1, (int)Rows);		/* always works */
 			msg_row = Rows - 2;
@@ -366,8 +411,12 @@ msg_outstr(s)
 			 */
 			if (p_more && --lines_left == 0)
 			{
+#ifdef notdef
 				windgoto((int)Rows - 1, 0);
 				outstr((char_u *)"-- more --");
+#else
+				screen_msg("-- more --", Rows - 1, 0);
+#endif
 				c = vgetc();
 				if (c == CR || c == NL)
 					lines_left = 1;
@@ -386,6 +435,19 @@ msg_outstr(s)
 		}
 		else
 		{
+#ifdef KANJI
+			if (ISkanji(*s) && s[1])
+			{
+				if (msg_col == (Columns - 1))
+				{
+					screen_msg(" ", msg_row, msg_col++);
+					msg_col = 0;
+					msg_row++;
+				}
+				screen_msg(s++, msg_row, msg_col++);
+			}
+			else
+#endif
 			screen_outchar(*s, msg_row, msg_col);
 			if (++msg_col >= Columns)
 			{
